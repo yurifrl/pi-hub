@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-wmx",
+  "title": "lib: adapters — json_store, jsonl_store, omp_agent, unix_socket, sse_bus",
+  "description": "",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-30T18:55:02.117Z",
+  "updated_at": "2026-08-30T19:06:23.602Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": "Spec: docs/01-architecture.md §Package layout (adapters list), §Core abstractions (event normalize pipeline), §Testing (adapters vs temp dirs). Protocol + file formats: docs/02-data-contracts.md (status.json schema, logs/<id>.jsonl event lines, summaries.jsonl, hub.sock NDJSON frames with cmdId correlation + version handshake, atomic tmp+rename, single-writer rule). Agent spawn contract: docs/05-omp-plugin.md §Agent spawn.",
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [
+    {
+      "issue_id": "tk-wmx",
+      "depends_on_id": "tk-bfx",
+      "type": "blocks",
+      "created_at": "2026-08-30T19:05:20.672Z",
+      "created_by": "yuri",
+      "metadata": {}
+    }
+  ],
+  "dependency_count": 1,
+  "dependent_count": 1,
+  "comments": [],
+  "comment_count": 0
+}

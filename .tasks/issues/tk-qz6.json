@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-qz6",
+  "title": "docs: README.md for pi-hub package",
+  "description": "",
+  "status": "open",
+  "priority": 4,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-30T18:56:08.737Z",
+  "updated_at": "2026-08-30T19:06:44.050Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": null,
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [
+    {
+      "issue_id": "tk-qz6",
+      "depends_on_id": "tk-l2e",
+      "type": "blocks",
+      "created_at": "2026-08-30T19:06:22.680Z",
+      "created_by": "yuri",
+      "metadata": {}
+    }
+  ],
+  "dependency_count": 1,
+  "dependent_count": 0,
+  "comments": [
+    {
+      "id": "comment-aee98d44-af1a-4fa0-a914-a7b9447c8ba4",
+      "issue_id": "tk-qz6",
+      "author": "yuri",
+      "text": "Spec: PLAN.md index and spec.html stance section. One-word naming rule: pi-hub platform, hub.sock nerve, hub CLI, Hub Console web, hub_ tools, ~/.hub data (docs/01-architecture.md Architecture intro). Include quickstart pointers into docs/01 through docs/06.",
+      "created_at": "2026-08-30T19:05:04.928Z"
+    }
+  ],
+  "comment_count": 1
+}

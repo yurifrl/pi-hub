@@ -1,0 +1,3 @@
+{"issue_id":"tk-tku","action":"save","at":"2026-08-30T18:55:28.544Z","actor":null,"data":{"status":"open","title":"cli: subcommands — answer assign send tool spawn kill archive"}}
+{"issue_id":"tk-tku","action":"comment","at":"2026-08-30T19:03:49.486Z","actor":"yuri","data":{"text":"Spec: docs/03-cli.md Subcommands (answer assign send tool spawn kill archive each with args flags output human json ndjson and error paths; kill red confirm; send fuzzy picker). Socket commands: docs/02-data-contracts.md hub.sock cmd frames. Attention resolve semantics: docs/02 Attention lifecycle."}}
+{"issue_id":"tk-tku","action":"dependency_added","at":"2026-08-30T19:05:55.598Z","actor":"yuri","data":{"target":"tk-dfr","type":"blocks"}}

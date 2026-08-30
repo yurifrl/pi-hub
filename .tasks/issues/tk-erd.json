@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-erd",
+  "title": "skills: hub-ops + hub-watcher SKILL.md files",
+  "description": "",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-30T18:55:46.851Z",
+  "updated_at": "2026-08-30T19:06:09.565Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": null,
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [
+    {
+      "issue_id": "tk-erd",
+      "depends_on_id": "tk-bfx",
+      "type": "blocks",
+      "created_at": "2026-08-30T19:06:09.565Z",
+      "created_by": "yuri",
+      "metadata": {}
+    }
+  ],
+  "dependency_count": 1,
+  "dependent_count": 0,
+  "comments": [
+    {
+      "id": "comment-f431998a-74d7-45c3-8d32-ab7e8a8a4b8b",
+      "issue_id": "tk-erd",
+      "author": "yuri",
+      "text": "Spec: docs/06-agents-and-skills.md Skills section: skills/hub-ops/SKILL.md (nine hub tools one rule each, raise vs answer, summary style max 2 sentences, availability rule) and skills/hub-watcher/SKILL.md (phase rubric, attention kinds rubric with counter-examples, resolution recording). Format: SKILL.md uppercase with YAML frontmatter name description.",
+      "created_at": "2026-08-30T19:04:37.108Z"
+    }
+  ],
+  "comment_count": 1
+}

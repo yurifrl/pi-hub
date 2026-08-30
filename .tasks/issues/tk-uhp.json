@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-uhp",
+  "title": "lib: jsonl store append-only writer with atomic tmp+rename for status.json",
+  "description": "",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-30T18:55:14.823Z",
+  "updated_at": "2026-08-30T19:06:23.958Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": "Spec: docs/02-data-contracts.md §status.json (invariants: atomic tmp+rename, single-writer, version field, unknown-fields-ignored), §logs, §summaries.jsonl (kind: summary|resolution), §Versioning. Port: docs/01-architecture.md §Core abstractions (StatusStore, SummaryStore, AttentionStore interfaces).",
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [
+    {
+      "issue_id": "tk-uhp",
+      "depends_on_id": "tk-wmx",
+      "type": "blocks",
+      "created_at": "2026-08-30T19:05:21.001Z",
+      "created_by": "yuri",
+      "metadata": {}
+    }
+  ],
+  "dependency_count": 1,
+  "dependent_count": 1,
+  "comments": [],
+  "comment_count": 0
+}

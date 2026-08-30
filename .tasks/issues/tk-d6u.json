@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-d6u",
+  "title": "lib: attention classifier — approval/question/blocked/idle detection rules",
+  "description": "",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-30T18:55:46.499Z",
+  "updated_at": "2026-08-30T19:06:09.216Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": null,
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [
+    {
+      "issue_id": "tk-d6u",
+      "depends_on_id": "tk-jwx",
+      "type": "blocks",
+      "created_at": "2026-08-30T19:06:09.215Z",
+      "created_by": "yuri",
+      "metadata": {}
+    }
+  ],
+  "dependency_count": 1,
+  "dependent_count": 0,
+  "comments": [
+    {
+      "id": "comment-820338e1-cdee-4cdd-adee-88a588852663",
+      "issue_id": "tk-d6u",
+      "author": "yuri",
+      "text": "Spec: docs/06-agents-and-skills.md Hub agent detection rules table (waiting-on-user tool results to approval, question-shaped assistant output to question, tool failure to blocked, idle timeout to idle), Cadence section (attention scan on waiting or failing tool results plus agent_end, debounce per agent_end, idempotent resolutions). Data shapes: docs/02 AttentionItem kinds and status.json attention array. Skills rubric: skills/hub-watcher (docs/06 Skills).",
+      "created_at": "2026-08-30T19:04:36.765Z"
+    }
+  ],
+  "comment_count": 1
+}

@@ -1,0 +1,4 @@
+{"issue_id":"tk-wmx","action":"save","at":"2026-08-30T18:55:02.118Z","actor":null,"data":{"status":"open","title":"lib: adapters — json_store, jsonl_store, omp_agent, unix_socket, sse_bus"}}
+{"issue_id":"tk-wmx","action":"save","at":"2026-08-30T18:56:41.991Z","actor":null,"data":{"status":"open","title":"lib: adapters — json_store, jsonl_store, omp_agent, unix_socket, sse_bus"}}
+{"issue_id":"tk-wmx","action":"dependency_added","at":"2026-08-30T19:05:20.673Z","actor":"yuri","data":{"target":"tk-bfx","type":"blocks"}}
+{"issue_id":"tk-wmx","action":"save","at":"2026-08-30T19:06:23.603Z","actor":null,"data":{"status":"open","title":"lib: adapters — json_store, jsonl_store, omp_agent, unix_socket, sse_bus"}}

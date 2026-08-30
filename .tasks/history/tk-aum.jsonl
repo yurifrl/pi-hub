@@ -1,0 +1,3 @@
+{"issue_id":"tk-aum","action":"save","at":"2026-08-30T18:55:27.912Z","actor":null,"data":{"status":"open","title":"cli: render stack — screen buffer, ANSI theme mapping, session-hue, raw keypress, TTY degrade"}}
+{"issue_id":"tk-aum","action":"comment","at":"2026-08-30T19:03:34.849Z","actor":"yuri","data":{"text":"Spec: docs/03-cli.md Rendering (ANSI strategy, session-hue hash to color cube, alt-screen lifecycle, re-render on EventBus events, screen buffer modules screen.ts board.ts stream.ts inputs.ts, raw-mode single keypress, TTY degradation). Tokens: docs/01-architecture.md theme.ts single definition."}}
+{"issue_id":"tk-aum","action":"dependency_added","at":"2026-08-30T19:05:54.935Z","actor":"yuri","data":{"target":"tk-dfr","type":"blocks"}}

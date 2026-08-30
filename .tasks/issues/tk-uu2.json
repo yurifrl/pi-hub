@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-uu2",
+  "title": "web: Bun server startHubWeb, routes table, 127.0.0.1 bind",
+  "description": "",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-30T18:55:44.986Z",
+  "updated_at": "2026-08-30T19:06:07.541Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": null,
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [
+    {
+      "issue_id": "tk-uu2",
+      "depends_on_id": "tk-bfx",
+      "type": "blocks",
+      "created_at": "2026-08-30T19:06:07.540Z",
+      "created_by": "yuri",
+      "metadata": {}
+    }
+  ],
+  "dependency_count": 1,
+  "dependent_count": 0,
+  "comments": [
+    {
+      "id": "comment-d81470c1-8929-4c15-96f9-2337604ad6cb",
+      "issue_id": "tk-uu2",
+      "author": "yuri",
+      "text": "Spec: docs/04-web.md Routes table (11 routes incl /api/answer /api/assign /api/send /api/dismiss /api/status /stream), Server section (startHubWeb port shape, 127.0.0.1 default bind, v1 local-only no auth tradeoff). Port contracts: docs/01-architecture.md StatusStore SummaryStore AttentionStore.",
+      "created_at": "2026-08-30T19:03:50.157Z"
+    }
+  ],
+  "comment_count": 1
+}

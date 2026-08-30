@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-f6p",
+  "title": "agents: hub-watcher.md + pending-agent.md definitions",
+  "description": "",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-30T18:55:47.181Z",
+  "updated_at": "2026-08-30T19:06:09.885Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": null,
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [
+    {
+      "issue_id": "tk-f6p",
+      "depends_on_id": "tk-erd",
+      "type": "blocks",
+      "created_at": "2026-08-30T19:06:09.885Z",
+      "created_by": "yuri",
+      "metadata": {}
+    }
+  ],
+  "dependency_count": 1,
+  "dependent_count": 0,
+  "comments": [
+    {
+      "id": "comment-a0311860-1220-4144-ab61-11c35c060807",
+      "issue_id": "tk-f6p",
+      "author": "yuri",
+      "text": "Spec: docs/06-agents-and-skills.md Agent files section: agents/hub-watcher.md (thin role shell, read plus list tools only, system-prompt append skills/hub-watcher, surface watcher) and agents/pending-agent.md (demo custom surface, kind agent, surface pending, write scoped to its own surface.json — the interface IS the file contract). Format: match-day pattern agents dir.",
+      "created_at": "2026-08-30T19:05:03.937Z"
+    }
+  ],
+  "comment_count": 1
+}

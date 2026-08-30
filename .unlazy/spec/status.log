@@ -1,0 +1,16 @@
+2026-08-30T17:57:51.792Z dispatch ready-1 opened: G1, G2, G3, G4, G5, G6
+2026-08-30T18:00:09.145Z dispatch ready-1 started G1 as ArchDoc
+2026-08-30T18:00:09.207Z dispatch ready-1 started G2 as DataDoc
+2026-08-30T18:00:09.270Z dispatch ready-1 started G3 as CliDoc
+2026-08-30T18:00:09.336Z dispatch ready-1 started G4 as WebDoc
+2026-08-30T18:00:09.405Z dispatch ready-1 started G5 as PluginDoc
+2026-08-30T18:00:09.471Z dispatch ready-1 started G6 as AgentSkillDoc
+2026-08-30T18:00:09.532Z dispatch ready-1 sealed
+2026-08-30T18:14:38.592Z dispatch ready-1 returned G5
+2026-08-30T18:14:49.534Z dispatch ready-1 returned G1
+2026-08-30T18:14:49.605Z dispatch ready-1 returned G6
+2026-08-30T18:15:09.270Z dispatch ready-1 returned G4
+2026-08-30T18:33:03.333Z dispatch ready-1 returned G3
+2026-08-30T18:41:07.057Z dispatch ready-1 returned G2
+wave ready-1 complete: all six leaves returned and reverified
+root: ALL MET 9/9 — spec complete

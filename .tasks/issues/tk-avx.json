@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-avx",
+  "title": "cli: attention board screen (bare hub) with inline answer/assign cursors",
+  "description": "",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-30T18:55:28.240Z",
+  "updated_at": "2026-08-30T19:05:55.269Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": null,
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [
+    {
+      "issue_id": "tk-avx",
+      "depends_on_id": "tk-aum",
+      "type": "blocks",
+      "created_at": "2026-08-30T19:05:55.269Z",
+      "created_by": "yuri",
+      "metadata": {}
+    }
+  ],
+  "dependency_count": 1,
+  "dependent_count": 0,
+  "comments": [
+    {
+      "id": "comment-9a861366-0b81-46f3-b876-8270b43a22db",
+      "issue_id": "tk-avx",
+      "author": "yuri",
+      "text": "Spec: docs/03-cli.md hub (bare) board layout: orientation line, NEEDS YOU items with inline input cursor (typing delivers plus resolves), RUNNING digest, IDLE assign inputs; keys updown move, type answers, d dismiss, a assign, o open, l log, q quit; calm variant. Docs/06 flows: answer and assign sequence diagrams.",
+      "created_at": "2026-08-30T19:03:35.263Z"
+    }
+  ],
+  "comment_count": 1
+}

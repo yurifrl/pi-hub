@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-szb",
+  "title": "web: SSE stream endpoint — snapshot/attention/log/summary/phase events, Last-Event-ID reconnect",
+  "description": "",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-30T18:55:45.281Z",
+  "updated_at": "2026-08-30T19:06:07.898Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": null,
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [
+    {
+      "issue_id": "tk-szb",
+      "depends_on_id": "tk-uu2",
+      "type": "blocks",
+      "created_at": "2026-08-30T19:06:07.898Z",
+      "created_by": "yuri",
+      "metadata": {}
+    }
+  ],
+  "dependency_count": 1,
+  "dependent_count": 0,
+  "comments": [
+    {
+      "id": "comment-cc4d2251-66f5-4570-9431-b8d4ac51d45a",
+      "issue_id": "tk-szb",
+      "author": "yuri",
+      "text": "Spec: docs/04-web.md SSE contract (event names snapshot attention log summary phase plus payload shapes, Last-Event-ID reconnect with snapshot refresh, log events flow for every open session), Client state (last snapshot plus deltas). sse_bus adapter: docs/01-architecture.md adapters. Frames source: docs/02 hub.sock and EventBus port.",
+      "created_at": "2026-08-30T19:04:12.338Z"
+    }
+  ],
+  "comment_count": 1
+}

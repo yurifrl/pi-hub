@@ -1,0 +1,6 @@
+{"issue_id":"tk-sne","action":"save","at":"2026-08-30T18:55:02.403Z","actor":null,"data":{"status":"open","title":"scaffold package.json workspaces lib/cli/web with optional earendil peerDeps"}}
+{"issue_id":"tk-sne","action":"save","at":"2026-08-30T18:56:23.312Z","actor":null,"data":{"status":"open","title":"scaffold package.json workspaces lib/cli/web with optional earendil peerDeps"}}
+{"issue_id":"tk-sne","action":"save","at":"2026-08-30T19:05:20.388Z","actor":null,"data":{"status":"open","title":"scaffold package.json workspaces lib/cli/web with optional earendil peerDeps"}}
+{"issue_id":"tk-sne","action":"save","at":"2026-08-30T19:05:36.359Z","actor":null,"data":{"status":"open","title":"scaffold package.json workspaces lib/cli/web with optional earendil peerDeps"}}
+{"issue_id":"tk-sne","action":"save","at":"2026-08-30T19:06:22.984Z","actor":null,"data":{"status":"open","title":"scaffold package.json workspaces lib/cli/web with optional earendil peerDeps"}}
+{"issue_id":"tk-sne","action":"comment","at":"2026-08-30T19:07:18.650Z","actor":"yuri","data":{"text":"Spec: docs/01-architecture.md Package layout (root manifest contract), Module boundaries rule on workspaces wiring. Reference implementation: pi-fbr-match-day/package.json (peerDepsMeta optional)."}}

@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-jwx",
+  "title": "lib: hub agent runtime — spawn omp --mode acp, EventBus subscribe, watcher loop",
+  "description": "",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-30T18:55:46.218Z",
+  "updated_at": "2026-08-30T19:06:08.888Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": null,
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [
+    {
+      "issue_id": "tk-jwx",
+      "depends_on_id": "tk-bfx",
+      "type": "blocks",
+      "created_at": "2026-08-30T19:06:08.888Z",
+      "created_by": "yuri",
+      "metadata": {}
+    }
+  ],
+  "dependency_count": 1,
+  "dependent_count": 0,
+  "comments": [
+    {
+      "id": "comment-914168a4-52c7-43d5-a6b9-1c8374dc20dc",
+      "issue_id": "tk-jwx",
+      "author": "yuri",
+      "text": "Spec: docs/06-agents-and-skills.md Hub agent (spawn via hub agent CLI or web toggle or /hub-agent, child omp --mode acp, env OMP_HUB_AGENT=1, kind agent, loop subscribe classify update write raise, system prompt sketch, supervision restart on-failure, model OMP_HUB_MODEL). Runtime port: docs/01-architecture.md AgentRuntime. Agent spawn: docs/05-omp-plugin.md Agent spawn section.",
+      "created_at": "2026-08-30T19:04:36.467Z"
+    }
+  ],
+  "comment_count": 1
+}

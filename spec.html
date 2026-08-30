@@ -1,0 +1,2282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pi-hub — Implementation Spec</title>
+<style>
+:root{color-scheme:dark;--accent:#70e1c4;--ok:#3fd68f;--warn:#f5c04e;--err:#ff7a9a;--muted:#8b97b0;--bg:#0b1020;--panel:#141d35;--panel2:#10182c;--border:#293759;--text:#eff5ff;--mono:ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:#070b14;color:var(--text);font-family:ui-sans-serif,system-ui,sans-serif;line-height:1.55}
+header.hero{padding:2.2rem 1.5rem 1.2rem;max-width:1100px;margin:auto}
+.eyebrow{color:var(--accent);text-transform:uppercase;letter-spacing:.14em;font-weight:700;font-size:.75rem}
+h1{margin:.2rem 0 .3rem;font-size:1.9rem}
+.hero p{color:#a7b6d6;max-width:75ch}
+.stance{background:#1a1524;border:1px solid #4a3b1f;border-radius:10px;padding:.9rem 1.1rem;margin:1rem 0;color:#ffd98a;font-size:.9rem}
+.stance code{color:#ffd98a}
+nav.toc{display:flex;gap:.5rem;flex-wrap:wrap;padding:0 1.5rem 1.5rem;max-width:1100px;margin:auto}
+nav.toc a{border:1px solid var(--border);border-radius:999px;padding:.3rem .85rem;font-size:.83rem;color:var(--accent);text-decoration:none}
+nav.toc a:hover{background:#182342}
+section.doc{max-width:1100px;margin:0 auto 2.5rem;background:var(--panel2);border:1px solid var(--border);border-radius:14px;padding:1.6rem 2rem}
+.doc-tag{display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:.7rem;margin-bottom:1rem}
+.doc-tag b{color:var(--accent);text-transform:uppercase;letter-spacing:.12em;font-size:.75rem}
+.doc-tag span{color:var(--muted);font-family:var(--mono);font-size:.72rem}
+h2{font-size:1.25rem;margin:1.8rem 0 .6rem;color:var(--text)}
+h3{color:var(--accent);margin:1.4rem 0 .4rem;font-size:1.02rem}
+h4{margin:1rem 0 .3rem}
+p{margin:.5rem 0}
+code{background:#0a0f1f;border:1px solid var(--border);border-radius:4px;padding:0 .3rem;font-family:var(--mono);font-size:.85em;color:#c9d6f2}
+pre.code{background:#05080f;border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;overflow:auto;font-family:var(--mono);font-size:.78rem;line-height:1.5;color:#c9d6ef}
+table{border-collapse:collapse;width:100%;font-size:.82rem;margin:.7rem 0}
+th{color:var(--accent);text-align:left;border-bottom:1px solid var(--border);padding:.35rem .6rem}
+td{border-bottom:1px solid #1b2440;padding:.38rem .6rem;vertical-align:top}
+ul{margin:.4rem 0 .6rem;padding-left:1.3rem}
+li{margin:.2rem 0}
+b{color:#dbe5fb}
+footer{max-width:1100px;margin:2rem auto 4rem;color:var(--muted);font-size:.8rem;padding:0 1.5rem}
+@media print{body{background:#fff;color:#111}}
+</style>
+</head>
+<body>
+<header class="hero">
+<p class="eyebrow">pi-hub · implementation spec</p>
+<h1>pi-hub — how this gets built</h1>
+<p>Complete implementation-grade specification. Six modules, one contract: hexagonal <code>@yurifrl/hub</code> core, <code>hub</code> CLI, Hub Console web, omp plugin, and the agent that makes every surface open on <b>what needs attention</b>.</p>
+<div class="stance">Action-oriented stance: every surface (terminal board, web console, omp widget) renders the hub agent's digest first — <code>⚠ needs you → ⏳ running → 💤 idle</code> — with inline answer/assign inputs. The raw log stays, demoted.</div>
+<nav class="toc"><a href="#doc-01-architecture">Architecture</a>
+<a href="#doc-02-data-contracts">Data Contracts</a>
+<a href="#doc-03-cli">CLI</a>
+<a href="#doc-04-web">Web Console</a>
+<a href="#doc-05-omp-plugin">omp Plugin</a>
+<a href="#doc-06-agents-and-skills">Agents & Skills</a></nav>
+</header>
+<section class="doc" id="doc-01-architecture"><div class="doc-tag"><b>Architecture</b><span>docs/01-architecture.md</span></div><h2 id="sec">pi-hub — Architecture</h2>
+
+<p>Scope: the hexagonal core (<code>@yurifrl/hub</code>), the host packages (<code>@yurifrl/hub-cli</code>, <code>@yurifrl/hub-web</code>, the omp plugin <code>@yurifrl/pi-hub</code>), their boundaries and import rules, the core abstractions, the error model, testing strategy, and repo conventions. Schemas of <code>~/.hub/</code> files and <code>hub.sock</code> frames are owned by <code>docs/02-data-contracts.md</code>; commands, routes, tools, and agents by <code>03</code>–<code>06</code>.</p>
+
+<h3 id="architecture">Architecture</h3>
+
+<p><b>Decision.</b> pi-hub is hexagonal (ports &amp; adapters), package-oriented, and DRY. One word names everything: the platform you install is <code>pi-hub</code>, the core library is <code>@yurifrl/hub</code>, the nerve is <code>hub.sock</code>, the CLI is <code>hub</code>, the web app is the Hub Console, the omp tools are <code>hub_*</code>, the data root is <code>~/.hub/</code>.</p>
+
+<p>Layers:</p>
+
+<table>
+<tr><th>layer</th><th>where</th><th>rule</th></tr>
+<tr><td>domain</td><td><code>lib/domain/</code></td><td>pure TypeScript types and pure functions. Imports nothing: no <code>node:<i></code>, no <code>bun:</i></code>, no <code>@earendil-works/*</code>, no other layer. Values in, values out.</td></tr>
+<tr><td>ports</td><td><code>lib/ports/</code></td><td>interfaces the core needs from the outside (<code>StatusStore</code>, <code>SummaryStore</code>, <code>AttentionStore</code>, <code>EventBus</code>, <code>AgentRuntime</code>, <code>Clock</code>). Imports domain only.</td></tr>
+<tr><td>adapters</td><td><code>lib/adapters/</code></td><td>implementations of ports at the edges: filesystem, JSONL, omp subprocesses, unix socket, SSE. Imports ports + domain. All I/O lives here; zero domain logic — adapters translate between the outside world and the core.</td></tr>
+<tr><td>hosts</td><td><code>extensions/hub.ts</code>, <code>cli/</code>, <code>web/</code></td><td>composition roots: instantiate adapters, inject them into ports, expose surfaces. No domain logic; parsing and presenting only.</td></tr>
+</table>
+
+<p><b>Dependency direction</b> (arrows point at the allowed target; dependencies point inward only — the domain never imports an adapter, an adapter never imports a host):</p>
+
+<pre class="code" data-lang="text">
+   extensions/hub.ts          cli/src/bin.ts          web/src/index.ts
+   (@yurifrl/pi-hub)         (@yurifrl/hub-cli)      (@yurifrl/hub-web)
+        │                          │                       │
+        └──────────────┬───────────┴───────────┬───────────┘
+                       ▼                       ▼
+             ┌───────────────────────────────────────────┐
+             │ lib — @yurifrl/hub                        │
+             │                                           │
+             │    adapters ───▶ ports ◀─── domain        │
+             └────────────────┬──────────────────────────┘
+                              ▼
+      ~/.hub/   status.json · logs/&lt;id&gt;.jsonl · summaries.jsonl · archive/ · hub.sock
+</pre>
+
+<p><b>Why.</b> The domain must stay testable without pi, without the filesystem, and without sockets — that is the point of the hexagon. Keeping hosts as thin composition roots means a new surface (a TUI, a widget, a second web view) is a renderer plugin over the same <code>CommandSurface</code>, not a fork of business logic. Package-oriented layout (one capability = one package with its own <code>package.json</code> and public <code>index.ts</code>) keeps workspaces independently type-checkable and makes &quot;who may import whom&quot; a checkable fact instead of a convention.</p>
+
+<p><b>Contract — import matrix.</b> Rows import the marked columns and nothing else. &quot;barrel&quot; = <code>lib/index.ts</code>; &quot;adapters subpath&quot; = <code>@yurifrl/hub/adapters/&lt;name&gt;</code>, exposed only through the <code>exports</code> map in <code>lib/package.json</code>.</p>
+
+<table>
+<tr><th>importer</th><th>lib/domain</th><th>lib/ports</th><th>lib/adapters</th><th>lib barrel</th><th>lib/theme</th><th><code>@earendil-works/*</code></th><th>node/bun std</th></tr>
+<tr><td><code>lib/domain</code></td><td>—</td><td>no</td><td>no</td><td>no</td><td>no</td><td><b>never</b></td><td>no</td></tr>
+<tr><td><code>lib/ports</code></td><td>yes</td><td>—</td><td>no</td><td>no</td><td>no</td><td><b>never</b></td><td>no</td></tr>
+<tr><td><code>lib/adapters</code></td><td>yes</td><td>yes</td><td>—</td><td>no</td><td>no</td><td><b>never</b></td><td>yes (edge I/O only)</td></tr>
+<tr><td><code>lib/index.ts</code></td><td>re-export</td><td>re-export</td><td>no</td><td>—</td><td>re-export</td><td><b>never</b></td><td>no</td></tr>
+<tr><td><code>cli/</code> (<code>@yurifrl/hub-cli</code>)</td><td>via barrel</td><td>via barrel</td><td>via subpath</td><td>yes</td><td>yes</td><td>no</td><td>yes</td></tr>
+<tr><td><code>web/</code> (<code>@yurifrl/hub-web</code>)</td><td>via barrel</td><td>via barrel</td><td>via subpath</td><td>yes</td><td>yes</td><td>no</td><td>yes</td></tr>
+<tr><td><code>extensions/hub.ts</code> (<code>@yurifrl/pi-hub</code>)</td><td>via barrel</td><td>via barrel</td><td>via subpath</td><td>yes</td><td>yes</td><td>yes (optional peers)</td><td>yes</td></tr>
+</table>
+
+<p>Rules the matrix encodes:</p>
+
+<ul><li>lib imports nothing from omp or <code>@earendil-works/*</code>. The extension entry is the only consumer of host types.</li>
+<li><code>@earendil-works/pi-coding-agent</code> and <code>@earendil-works/pi-tui</code> are optional peerDependencies of the root package only, so the plugin compiles against whatever the host ships and renders through the host&#x27;s TUI. lib, cli, and web never reference them.</li>
+<li>extensions import lib; cli and web import lib only — never each other, never the extension, never omp types directly.</li>
+<li>Any deep import across a package boundary (<code>@yurifrl/hub/domain/session</code>) is a defect; only barrels and documented adapter subpaths cross.</li>
+</ul>
+<p><b>DRY rules.</b> Every type is defined exactly once in <code>lib/domain/</code> — surfaces are renderer plugins over it, never re-declare it. Theme tokens are defined once in <code>lib/theme.ts</code> and consumed by every surface:</p>
+
+<table>
+<tr><th>token</th><th>value</th><th>semantics</th></tr>
+<tr><td>accent</td><td><code>#70e1c4</code></td><td>chrome, selection, cursor, send</td></tr>
+<tr><td>ok</td><td><code>#3fd68f</code></td><td>open, live, done</td></tr>
+<tr><td>warn</td><td><code>#f5c04e</code></td><td>attention semantics: needs-you, waiting, summaries</td></tr>
+<tr><td>err</td><td><code>#ff7a9a</code></td><td>failures, kill confirm</td></tr>
+<tr><td>muted</td><td><code>#8b97b0</code></td><td>timestamps, ids, hints</td></tr>
+<tr><td>session-hue</td><td>hash(sessionId)</td><td>per-session left bar; tracks one session inside any stream</td></tr>
+</table>
+
+<p>Deliberate duplications — the only sanctioned exceptions to the one-definition rule, each recorded with why coupling would be worse:</p>
+
+<table>
+<tr><th>duplication</th><th>where</th><th>why a shared abstraction is worse</th></tr>
+<tr><td>op-name literals (<code>list</code>, <code>attention</code>, <code>answer</code>, <code>assign</code>, <code>send</code>, <code>tool</code>, <code>spawn</code>, <code>kill</code>, <code>archive</code>, <code>logTail</code>, <code>summaries</code>)</td><td>the cli commander tree; the omp plugin tool schemas</td><td>both artifacts must be statically inspectable (<code>hub --help</code> output, omp tool schema JSON) and versioned with their host; generating one from the other couples compile-time artifacts through runtime reflection and hides ops from grep</td></tr>
+<tr><td>error presentation</td><td>cli exit codes + ANSI copy; web HTTP status + JSON body; plugin tool error text</td><td>the taxonomy lives once in domain (<code>HubCode</code>); rendering is per-medium because unifying it drags terminal/browser/user-facing copy into the core and forces a lib release for copy changes</td></tr>
+<tr><td>output-policy parsing</td><td>cli <code>--json</code> / <code>--ndjson</code> flags; web format negotiation (query param / Accept)</td><td>same policy, two mechanics (argv vs HTTP); a lib-level &quot;output policy&quot; abstraction would have exactly one caller per host and leak HTTP concerns into lib</td></tr>
+</table>
+
+<p>Everything else is defined once. If two packages need a third thing, it is either a domain concept (move it into <code>lib/domain</code>) or it is added to this table with a reason.</p>
+
+<h3 id="package-layout">Package layout</h3>
+
+<pre class="code" data-lang="text">
+pi-hub/
+├── package.json               # @yurifrl/pi-hub — omp plugin root; workspaces lib/cli/web; optional peers @earendil-works/*
+├── lib/                       # @yurifrl/hub — hexagonal core; imports nothing from omp or the hosts
+│   ├── package.json           # exports: &quot;.&quot; (barrel) and &quot;./adapters/*&quot;; no omp deps
+│   ├── domain/                # pure types + pure functions; zero imports
+│   │   ├── session.ts         # SessionRecord, StatusFile, LogEntry, RawOmpEvent, HubEvent, phases working|waiting|idle|blocked
+│   │   ├── attention.ts       # AttentionKind, AttentionItem, AttentionCandidate, proposeAttention()
+│   │   ├── summary.ts         # SummaryLine {t, sessionId, kind: summary|resolution, text, by}
+│   │   ├── filter.ts          # Filter: id/phase/kind/text predicates shared by every read op
+│   │   └── command.ts         # Result, HubCode, HubError, OpName, CommandRequest/Reply, CommandSurface
+│   ├── ports/                 # interfaces the core needs; import domain only
+│   │   ├── status_store.ts    # StatusStore: read/update status.json atomically
+│   │   ├── summary_store.ts   # SummaryStore: append/tail summaries.jsonl
+│   │   ├── attention_store.ts # AttentionStore: list/raise/resolve attention items
+│   │   ├── event_bus.ts       # EventBus: publish/subscribe hub events
+│   │   ├── agent_runtime.ts   # AgentRuntime: spawn/send/kill omp agent sessions
+│   │   └── clock.ts           # Clock: injected time; tests freeze it
+│   ├── adapters/              # port implementations; all I/O; import ports + domain
+│   │   ├── json_store.ts      # StatusStore over ~/.hub/status.json (single-writer, tmp+rename)
+│   │   ├── jsonl_store.ts     # SummaryStore + log append/replay over logs/&lt;id&gt;.jsonl and summaries.jsonl
+│   │   ├── omp_agent.ts       # AgentRuntime spawning `omp --mode acp` child sessions
+│   │   ├── unix_socket.ts     # hub.sock server (hub process) + client (cli/web/plugin); newline-delimited JSON frames
+│   │   └── sse_bus.ts         # EventBus → SSE stream for the web; Last-Event-ID replay
+│   ├── theme.ts               # the one theme definition: tokens, palette, session-hue hash
+│   └── index.ts               # public barrel: domain + ports + theme; adapters stay behind subpaths
+├── cli/                       # @yurifrl/hub-cli — the `hub` binary; imports lib only
+│   ├── package.json           # bin: { &quot;hub&quot;: &quot;./src/bin.ts&quot; }
+│   └── src/
+│       ├── bin.ts             # runtime entry (a sanctioned default export); argv parsing, exit codes
+│       ├── commands/          # one module per verb: parse args → CommandRequest → render reply
+│       ├── render/            # ANSI painting of RenderBlocks using lib/theme.ts tokens
+│       └── screens/           # full-screen views: attention board, watch, pickers
+├── web/                       # @yurifrl/hub-web — Hub Console; imports lib only
+│   ├── package.json
+│   └── src/
+│       ├── index.ts           # server assembly; injects adapters, mounts routes
+│       ├── server.ts          # Bun server: static assets + SSE + JSON routes
+│       └── routes/            # one module per route family; format negotiation (web&#x27;s --json equivalent)
+├── extensions/
+│   └── hub.ts                 # omp plugin entry: reporter + 9 hub_* tools + widget; composition root
+├── skills/
+│   ├── hub-ops/SKILL.md       # operating recipes: send/tool/spawn/kill/archive against live sessions
+│   └── hub-watcher/SKILL.md   # the hub agent loop: parse threads, raise/resolve attention, write summaries
+├── agents/
+│   ├── hub-watcher.md         # hub agent definition (watcher surface, OMP_HUB_AGENT=1, kind:agent)
+│   └── pending-agent.md       # demo agent declaring a custom `pending` agentSurface
+├── docs/                      # this spec set (01–06)
+└── .unlazy/                   # acceptance gates and check scripts for the spec
+</pre>
+
+<p>Root manifest contract:</p>
+
+<pre class="code" data-lang="json">
+{
+  &quot;name&quot;: &quot;@yurifrl/pi-hub&quot;,
+  &quot;private&quot;: true,
+  &quot;workspaces&quot;: [&quot;lib&quot;, &quot;cli&quot;, &quot;web&quot;],
+  &quot;peerDependencies&quot;: {
+    &quot;@earendil-works/pi-coding-agent&quot;: &quot;*&quot;,
+    &quot;@earendil-works/pi-tui&quot;: &quot;*&quot;
+  },
+  &quot;peerDependenciesMeta&quot;: {
+    &quot;@earendil-works/pi-coding-agent&quot;: { &quot;optional&quot;: true },
+    &quot;@earendil-works/pi-tui&quot;: { &quot;optional&quot;: true }
+  }
+}
+</pre>
+
+<p><b>Why.</b> lib is a workspace so hosts resolve it by name (<code>@yurifrl/hub</code>) instead of relative paths, which makes the import matrix enforceable per package. The peers stay optional on the root because only <code>extensions/hub.ts</code> runs inside omp; <code>hub</code> and the web server must install and run on a machine that has never seen pi.</p>
+
+<h3 id="module-boundaries">Module boundaries</h3>
+
+<p>1. Dependencies point inward only: adapters → ports → domain. The domain never imports a port; ports never import adapters; no layer imports a host.</p>
+<p>2. Hosts reach lib only through the barrel (<code>@yurifrl/hub</code>) or documented adapter subpaths. Deep imports across packages are defects.</p>
+<p>3. <code>extensions/hub.ts</code> is composition root only: it registers the reporter (session_start with attached flag, user_message, assistant_message, tool_call, agent_end frames), the 9 <code>hub_*</code> tools, and the widget — nothing else. Domain logic found in the extension is in the wrong package.</p>
+<p>4. Single writer: exactly one hub process per data root exists at a time, and it is the only writer of <code>status.json</code> (atomic tmp+rename). cli, web, and the plugin are read-only observers that mutate exclusively through ops over <code>hub.sock</code> (cmd/reply frames correlated by <code>cmdId</code>, version handshake field on connect). Startup races are resolved by an exclusive lock taken at boot (mechanism owned by <code>02-data-contracts</code>).</p>
+<p>5. One capability = one package. There is no <code>utils.ts</code>, <code>helpers.ts</code>, or <code>misc.ts</code> anywhere in the repo; see Conventions.</p>
+<p>6. Runtime writes stay inside <code>~/.hub/</code>. No package writes outside <code>pi-hub/</code> at build or dev time without explicit approval; the extension never edits pi settings or syncs files into <code>~/.pi/</code>.</p>
+<p>7. Agent surfaces are data, not code: an agent declares an <code>agentSurface</code> id, and each host registers a renderer per id (default <code>watcher</code>, demo <code>pending</code>); per-agent state lives in <code>~/.hub/agents/&lt;name&gt;/surface.json</code>. A host that has no renderer for a declared id renders the raw stream only — it never guesses.</p>
+
+<h3 id="core-abstractions">Core abstractions</h3>
+
+<p>All types below are defined once in <code>lib/domain/</code>. Fences are type sketches only — no runnable code.</p>
+
+<pre class="code" data-lang="ts">
+// lib/domain/command.ts — shared vocabulary for every port result and surface reply
+type Result&lt;T, E&gt; = { ok: true; value: T } | { ok: false; error: E };
+
+type HubCode = &quot;unavailable-hub&quot; | &quot;unknown-session&quot; | &quot;timeout&quot; | &quot;denied&quot;;
+
+type HubError = {
+  code: HubCode;
+  message: string;        // human text, presentable as-is by any surface
+  retryable: boolean;     // true only for transient unavailable-hub / timeout
+  cause?: unknown;        // structured detail, never a thrown Error instance
+};
+</pre>
+
+<pre class="code" data-lang="ts">
+// lib/domain/command.ts — the one op registry every surface speaks
+type OpName =
+  | &quot;list&quot; | &quot;attention&quot; | &quot;answer&quot; | &quot;assign&quot; | &quot;send&quot;
+  | &quot;tool&quot; | &quot;spawn&quot; | &quot;kill&quot; | &quot;archive&quot; | &quot;logTail&quot; | &quot;summaries&quot;;
+
+type Caller = &quot;cli&quot; | &quot;web&quot; | &quot;plugin&quot; | &quot;agent&quot;;
+
+type CommandRequest = {
+  cmdId: string;                     // correlation id echoed by reply frames on hub.sock
+  op: OpName;
+  args: Record&lt;string, unknown&gt;;
+  by: Caller;
+};
+
+type CommandReply = Result&lt;unknown, HubError&gt;;
+
+type CommandSurface = {
+  dispatch(req: CommandRequest): Promise&lt;CommandReply&gt;;
+  ops(): OpName[];                   // registry inspection feeding --help and tool schemas
+};
+</pre>
+
+<p>The op set is the whole action vocabulary of the platform. The nine omp tools map onto it (<code>hub_list_sessions</code> → <code>list</code>, <code>hub_send_message</code> → <code>send</code>, <code>hub_call_tool</code> → <code>tool</code>, <code>hub_spawn_worker</code> → <code>spawn</code>, <code>hub_kill_worker</code> → <code>kill</code>, <code>hub_archive</code> → <code>archive</code>, <code>hub_attention</code> → <code>attention</code>, <code>hub_answer</code> → <code>answer</code>, <code>hub_assign</code> → <code>assign</code>); <code>logTail</code> and <code>summaries</code> are cli/web-only reads with no omp tool. Schemas per tool are owned by <code>05-omp-plugin</code>.</p>
+
+<pre class="code" data-lang="ts">
+// lib/domain/session.ts — renderer plugin contract; hosts paint, domain decides
+type StatusSnapshot = {
+  sessions: Record&lt;string, SessionRecord&gt;;   // includes phase: working|waiting|idle|blocked
+  attention: AttentionItem[];
+  summaries: SummaryLine[];                  // tail, already filtered
+  agent: { present: boolean; surfaceId: string | null };
+};
+
+type RenderBlock =
+  | { kind: &quot;orientation&quot;; text: string }            // the agent-written one-liner
+  | { kind: &quot;attention&quot;; items: AttentionItem[] }
+  | { kind: &quot;running&quot;; sessions: SessionRecord[] }
+  | { kind: &quot;idle&quot;; sessions: SessionRecord[] }
+  | { kind: &quot;log&quot;; entries: LogEntry[] }
+  | { kind: &quot;custom&quot;; surfaceId: string; payload: unknown };  // agent-declared surfaces
+
+type SurfaceRenderer = {
+  id: string;                        // matches agentSurface id in ~/.hub/agents/&lt;name&gt;/surface.json
+  render(snapshot: StatusSnapshot): RenderedSurface;   // pure: snapshot in, view model out
+};
+</pre>
+
+<p>Renderers are pure snapshot→view-model functions; the medium (ANSI, HTML) is applied by the host&#x27;s paint layer using <code>lib/theme.ts</code> tokens. This is what makes terminal, web, and widget render the same hierarchy — orientation, needs-you, running, idle, stream — from one implementation.</p>
+
+<p>Event normalize pipeline — raw omp event to store and bus, four stages:</p>
+
+<pre class="code" data-lang="ts">
+// stage 1 — adapter edge (extensions/hub.ts reporter → lib/adapters/jsonl_store.ts)
+type RawOmpEvent =
+  | { type: &quot;session_start&quot;; sessionId: string; attached: boolean; cwd: string }
+  | { type: &quot;user_message&quot;; sessionId: string; text: string }
+  | { type: &quot;assistant_message&quot;; sessionId: string; text: string }
+  | { type: &quot;tool_call&quot;; sessionId: string; tool: string; args: unknown }
+  | { type: &quot;agent_end&quot;; sessionId: string; exitSummary?: string };
+
+type LogEntry = {
+  t: number;                         // Clock.now() at normalize time
+  sessionId: string;
+  kind: RawOmpEvent[&quot;type&quot;];
+  text: string;                      // one rendered line; no nested structures
+  meta?: Record&lt;string, unknown&gt;;
+};
+
+// stage 2 — domain, pure (lib/domain/attention.ts): proposeAttention(entry, ctx) → candidate | null
+type AttentionKind = &quot;approval&quot; | &quot;question&quot; | &quot;blocked&quot; | &quot;idle&quot;;
+type AttentionCandidate = {
+  sessionId: string;
+  kind: AttentionKind;
+  text: string;
+  evidence: LogEntry[];              // why this needs a human
+};
+
+// stage 3 — hub agent commits: candidate → AttentionItem via AttentionStore.raise
+type AttentionItem = {
+  id: string;
+  sessionId: string;
+  kind: AttentionKind;
+  text: string;
+  createdAt: number;
+  resolvedAt?: number;
+  answer?: string;
+};
+
+// stage 4 — fanout: every committed store change publishes on the EventBus;
+// sse_bus.ts feeds the web, unix_socket.ts feeds cli/plugin watchers.
+type HubEvent = { topic: &quot;log&quot; | &quot;status&quot; | &quot;attention&quot; | &quot;summary&quot;; payload: unknown };
+</pre>
+
+<p>Nothing renders from raw logs except the log-tail views; every attention rail, digest line, and orientation line is built from the store contract above. Ports, for reference:</p>
+
+<pre class="code" data-lang="ts">
+// lib/ports/* — the interfaces hosts inject adapters into
+type StatusStore = {
+  read(): Promise&lt;Result&lt;StatusFile, HubError&gt;&gt;;
+  update(mutate: (s: StatusFile) =&gt; StatusFile): Promise&lt;Result&lt;StatusFile, HubError&gt;&gt;;  // atomic
+};
+type SummaryStore = {
+  append(line: SummaryLine): Promise&lt;Result&lt;void, HubError&gt;&gt;;
+  tail(n: number, f?: Filter): Promise&lt;Result&lt;SummaryLine[], HubError&gt;&gt;;
+};
+type AttentionStore = {
+  list(f?: Filter): Result&lt;AttentionItem[], HubError&gt;;
+  raise(c: AttentionCandidate): Promise&lt;Result&lt;AttentionItem, HubError&gt;&gt;;
+  resolve(id: string, answer: string | undefined, by: Caller): Promise&lt;Result&lt;AttentionItem, HubError&gt;&gt;;
+};
+type EventBus = {
+  publish(evt: HubEvent): void;
+  subscribe(fn: (evt: HubEvent) =&gt; void): () =&gt; void;   // returns unsubscribe
+};
+type AgentRuntime = {
+  spawn(spec: { name?: string; model?: string }): Promise&lt;Result&lt;AgentHandle, HubError&gt;&gt;;
+  send(name: string, text: string): Promise&lt;Result&lt;void, HubError&gt;&gt;;
+  kill(name: string): Promise&lt;Result&lt;void, HubError&gt;&gt;;
+};
+type Clock = { now(): number };                        // injected; tests freeze it
+</pre>
+
+<h3 id="error-model">Error model</h3>
+
+<p><b>Decision.</b> Errors are values, not exceptions. Every port method returns <code>Result&lt;T, HubError&gt;</code>; nothing throws across a port boundary. Adapters may throw only for programmer errors — assertion failures, misconfiguration at construction — never for expected runtime conditions. This is what lets a reply frame on <code>hub.sock</code> carry any failure losslessly and lets every surface render every failure.</p>
+
+<p>Taxonomy — a closed set of four codes:</p>
+
+<table>
+<tr><th>code</th><th>meaning</th><th>typical source</th><th>cli exit</th><th>web status</th><th>plugin</th></tr>
+<tr><td><code>unavailable-hub</code></td><td>hub process or socket not reachable</td><td>client connect fails, hub not running</td><td>2</td><td>503</td><td>tool error text</td></tr>
+<tr><td><code>unknown-session</code></td><td>sessionId absent from status.json</td><td>op against a dead or mistyped id</td><td>1</td><td>404</td><td>tool error text</td></tr>
+<tr><td><code>timeout</code></td><td>reply deadline exceeded</td><td><code>wait_seconds</code> elapsed with no reply frame</td><td>3</td><td>408</td><td>tool error text</td></tr>
+<tr><td><code>denied</code></td><td>op not permitted for this caller</td><td>kill/assign against the hub&#x27;s own <code>kind:agent</code> session; declined confirmation on <code>kill</code></td><td>1</td><td>403</td><td>tool error text</td></tr>
+</table>
+
+<p><b>Contract.</b> The code set is closed; the exact cli table is owned by <code>03-cli</code>, the HTTP mapping by <code>04-web</code> — this doc fixes the codes and the rule that they are data. Forward compatibility: a surface receiving an unknown code (newer hub) renders a generic failure with the message text instead of crashing. <code>retryable: true</code> marks the only cases where a surface may auto-retry (<code>unavailable-hub</code> reconnect, <code>timeout</code> re-ask with a fresh <code>cmdId</code>); everything else is terminal for that request.</p>
+
+<h3 id="testing">Testing</h3>
+
+<p><b>Decision.</b> <code>bun test</code> per package, zero shared test configuration; test files are <code>*.test.ts</code> colocated next to the module they exercise. Adapters receive <code>dataRoot</code> and socket path as constructor arguments — tests never touch the real <code>~/.hub/</code> and never need a new env var for isolation.</p>
+
+<table>
+<tr><th>package</th><th>level</th><th>edge/fakes</th></tr>
+<tr><td><code>lib/domain</code></td><td>pure unit; no I/O, no mocks</td><td><code>Clock</code> frozen; <code>Filter</code> and <code>proposeAttention</code> exercised as tables of cases</td></tr>
+<tr><td><code>lib/adapters</code></td><td>integration against temp dirs (<code>mkdtemp</code>)</td><td><code>json_store</code> atomicity (interrupted write leaves <code>status.json</code> valid, tmp discarded); <code>jsonl_store</code> append/replay; <code>unix_socket</code> over a temp socket path; <code>sse_bus</code> replay via <code>Last-Event-ID</code></td></tr>
+<tr><td><code>cli</code></td><td>command layer against a fake <code>CommandSurface</code></td><td>assertions on view models, not on ANSI color codes; exit-code table pinned</td></tr>
+<tr><td><code>web</code></td><td>routes via <code>fetch</code> against the server on <code>127.0.0.1</code> with a temp data root</td><td>SSE asserted through event replay, not sleeps</td></tr>
+<tr><td><code>extensions/hub.ts</code></td><td>thin by rule; exercised through the reporter/tool contract with a stubbed host context</td><td>no omp runtime needed to test tool dispatch</td></tr>
+</table>
+
+<ul><li><b>Domain pure unit:</b> every domain function is deterministic given an injected <code>Clock</code>; there is nothing to mock because there is nothing to inject but data.</li>
+<li><b>Adapters vs temp dirs:</b> each adapter test builds its own temp <code>dataRoot</code>, so tests run in parallel without cross-talk and a crashed test leaves no residue.</li>
+<li><b>One e2e:</b> a single test assembles the real composition root — hub process with a temp data root and a unix socket at a temp path — plus two fake sessions (scripted fixtures that emit reporter frames and answer cmd frames). It asserts the full spine: <code>session_start</code> lands both sessions in <code>status.json</code>; a <code>tool_call</code> proposing approval raises an <code>AttentionItem</code>; the <code>answer</code> op resolves it and appends a <code>kind:&quot;resolution&quot;</code> line to <code>summaries.jsonl</code>; <code>archive</code> moves the closed record to <code>archive/YYYY-MM/&lt;id&gt;.json</code>. This is the only test that spans packages; everything below it is unit or integration.</li>
+</ul>
+<h3 id="conventions">Conventions</h3>
+
+<ul><li><b>File naming:</b> kebab-case modules (<code>json_store.ts</code>, <code>status_store.ts</code>), PascalCase exported types, one module = one cohesive concern. Test files are <code>*.test.ts</code> colocated beside the tested module; larger fixtures live in <code>testdata/</code> under the owning package.</li>
+<li><b>Barrel exports:</b> each package exports only through its <code>index.ts</code> (<code>@yurifrl/hub</code>), plus adapter subpaths declared in <code>lib/package.json</code> <code>exports</code>. Reaching past a barrel from another package is a defect.</li>
+<li><b>No default exports except bins:</b> <code>cli/src/bin.ts</code> (bun bin entry) and <code>extensions/hub.ts</code> (omp loads it as the plugin entry) are the only default exports; everything else is a named export so tree-shaking and grep stay honest.</li>
+<li><b>No grab-bag utils:</b> <code>utils.ts</code>, <code>helpers.ts</code>, <code>misc.ts</code>, <code>common.ts</code> are banned. Shared code is either a domain concept (moves into <code>lib/domain</code>) or a recorded deliberate duplication (table above).</li>
+<li><b>No side effects at module load:</b> everything runs from entry handlers or <code>main()</code>; adapters do work only when their methods are called.</li>
+<li><b>Function shape:</b> max ~2 nesting levels — extract a function instead. No giant handlers: a host handler parses, dispatches one <code>CommandRequest</code>, and forwards the reply to the paint layer.</li>
+<li><b>Docs are decision records:</b> each doc states decision, why, contract; H1 + one-line scope sentence, H2 sections, dense markdown, types in fences, no emoji, no runnable code.</li>
+</ul></section>
+<section class="doc" id="doc-02-data-contracts"><div class="doc-tag"><b>Data Contracts</b><span>docs/02-data-contracts.md</span></div><h2 id="sec">pi-hub — Data contracts</h2>
+
+<p>On-disk and wire contracts for the hub — <code>status.json</code>, <code>logs/&lt;id&gt;.jsonl</code>,</p>
+<p><code>summaries.jsonl</code>, the <code>archive/YYYY-MM/</code> tree, and the <code>hub.sock</code> frame</p>
+<p>protocol; this doc is the shape and frame owner, and 03, 04, 05, 06 are</p>
+<p>consumers that reference it, never restate it. Conventions: timestamps are</p>
+<p>ISO 8601 UTC strings (e.g. <code>2026-08-30T17:57:51.401Z</code>); <code>sessionId</code> is the</p>
+<p>omp session id verbatim, never re-encoded or shortened; attention item ids</p>
+<p>are hub-minted <code>att-&lt;n&gt;</code> from the monotonic counter <code>nextAttentionId</code> in the</p>
+<p>meta block, so ids survive hub restarts; all types live once in</p>
+<p><code>lib/domain/</code> (01-architecture), tables here are normative field lists, and</p>
+<p>fenced <code>ts</code> blocks are type sketches only — no imports, no runtime code.</p>
+
+<h3 id="status-json">status.json</h3>
+
+<p><code>~/.hub/status.json</code> is one JSON object holding every live fact: the hub</p>
+<p>meta block, the <code>sessions</code> map, open <code>attention[]</code> items, and the</p>
+<p><code>archived[]</code> tombstone index. It is the only mutable state file; everything</p>
+<p>else is append-only logs or immutable archive records.</p>
+
+<p><b>Single writer:</b> only the hub process writes it. Enforcement is an</p>
+<p>exclusive <code>flock</code> on <code>~/.hub/hub.lock</code> held for the hub&#x27;s lifetime; a</p>
+<p>second hub instance fails to acquire the lock and exits (CLI exit code 2 —</p>
+<p>unavailable). CLI and web never write the file — they read it directly or</p>
+<p>take a <code>list</code> reply over <code>hub.sock</code>; every mutation flows through an op</p>
+<p>that only the hub process applies.</p>
+
+<p><b>Atomic rewrite:</b> writers replace the whole object — serialize, write</p>
+<p><code>status.json.tmp</code>, fsync, <code>rename(2)</code> over the target. Readers observe</p>
+<p>either the previous or the next complete object, never a torn file. A</p>
+<p>stale <code>status.json.tmp</code> is unlinked by the hub on start.</p>
+
+<h4>Hub meta block</h4>
+
+<table>
+<tr><th>field</th><th>type</th><th>required</th><th>contract</th></tr>
+<tr><td><code>version</code></td><td>number</td><td>yes</td><td>schema version, currently <code>1</code>; bump rules in ## Versioning</td></tr>
+<tr><td><code>startedAt</code></td><td>string</td><td>yes</td><td>hub process start time (UTC)</td></tr>
+<tr><td><code>pid</code></td><td>number</td><td>yes</td><td>writer pid; readers may use it to detect a dead hub</td></tr>
+<tr><td><code>nextAttentionId</code></td><td>number</td><td>yes</td><td>counter for the next <code>att-&lt;n&gt;</code> id</td></tr>
+<tr><td><code>digest</code></td><td>string</td><td>no</td><td>hub-agent orientation one-liner, refreshed per agent cycle; absent when the agent is off (surfaces synthesize counts as fallback)</td></tr>
+<tr><td><code>agentSession</code></td><td>string</td><td>no</td><td><code>sessionId</code> of the hub agent itself; present while the agent runs</td></tr>
+</table>
+
+<h4>sessions map</h4>
+
+<p><code>sessions</code> maps <code>sessionId</code> → <code>SessionRecord</code>. Key order is insertion</p>
+<p>order (session_start arrival); readers must not rely on it.</p>
+
+<table>
+<tr><th>field</th><th>type</th><th>required</th><th>contract</th></tr>
+<tr><td><code>status</code></td><td>`&quot;open&quot; \</td><td>&quot;closing&quot;`</td><td>yes</td><td><code>&quot;closing&quot;</code> between a close request and archive completion</td></tr>
+<tr><td><code>kind</code></td><td>`&quot;peer&quot; \</td><td>&quot;self&quot; \</td><td>&quot;worker&quot; \</td><td>&quot;agent&quot;`</td><td>yes</td><td>peer: attached external session; self: the session hosting the plugin that started this hub; worker: spawned via the <code>spawn</code> op; agent: the hub agent</td></tr>
+<tr><td><code>cwd</code></td><td>string</td><td>yes</td><td>working directory reported at session_start</td></tr>
+<tr><td><code>title</code></td><td>string</td><td>yes</td><td>first user message, truncated to 80 chars</td></tr>
+<tr><td><code>model</code></td><td>string</td><td>yes</td><td>model id reported at session_start</td></tr>
+<tr><td><code>description</code></td><td>string</td><td>no</td><td>agent-written one-liner: what the session is doing now</td></tr>
+<tr><td><code>phase</code></td><td>`&quot;working&quot; \</td><td>&quot;waiting&quot; \</td><td>&quot;idle&quot; \</td><td>&quot;blocked&quot;`</td><td>yes</td><td>current digest phase; defaults <code>&quot;working&quot;</code></td></tr>
+<tr><td><code>phaseHistory</code></td><td><code>{ phase: Phase, at: string }[]</code></td><td>no</td><td>appended on every phase transition, capped at 50 entries (oldest dropped); absent when the agent is off or nothing was recorded</td></tr>
+<tr><td><code>log</code></td><td>string</td><td>yes</td><td>link <code>logs/&lt;id&gt;.jsonl</code>, relative to <code>~/.hub/</code> — never log content</td></tr>
+<tr><td><code>toolCounts</code></td><td><code>Record&lt;string, number&gt;</code></td><td>yes</td><td>tool name → call count; starts <code>{}</code></td></tr>
+<tr><td><code>turns</code></td><td>number</td><td>yes</td><td>user turns observed; starts <code>0</code></td></tr>
+<tr><td><code>startedAt</code></td><td>string</td><td>yes</td><td>from session_start</td></tr>
+<tr><td><code>lastActivity</code></td><td>string</td><td>yes</td><td>timestamp of the last reporter frame of any kind</td></tr>
+<tr><td><code>agentSurface</code></td><td>string</td><td>no</td><td>declared surface id (06-agents-and-skills); surfaces default to <code>watcher</code></td></tr>
+</table>
+
+<p>Type sketch (mirrors <code>lib/domain/session.ts</code>):</p>
+
+<pre class="code" data-lang="ts">
+type Phase = &quot;working&quot; | &quot;waiting&quot; | &quot;idle&quot; | &quot;blocked&quot;;
+type SessionKind = &quot;peer&quot; | &quot;self&quot; | &quot;worker&quot; | &quot;agent&quot;;
+
+interface SessionRecord {
+  status: &quot;open&quot; | &quot;closing&quot;;
+  kind: SessionKind;
+  cwd: string;
+  title: string;
+  model: string;
+  description?: string;
+  phase: Phase;
+  phaseHistory?: { phase: Phase; at: string }[];
+  log: string; // &quot;logs/&lt;id&gt;.jsonl&quot; — a link, never content
+  toolCounts: Record&lt;string, number&gt;;
+  turns: number;
+  startedAt: string;
+  lastActivity: string;
+  agentSurface?: string;
+}
+</pre>
+
+<h4>attention[]</h4>
+
+<p>Top-level <code>attention</code> holds <b>open items only</b> — <code>AttentionItem</code> records</p>
+<p>that have not resolved. Resolved items are removed in the same rewrite</p>
+<p>that appends their resolution line to <code>summaries.jsonl</code> (## Attention</p>
+<p>lifecycle).</p>
+
+<table>
+<tr><th>field</th><th>type</th><th>required</th><th>contract</th></tr>
+<tr><td><code>id</code></td><td>string</td><td>yes</td><td><code>att-&lt;n&gt;</code>, hub-minted</td></tr>
+<tr><td><code>sessionId</code></td><td>string</td><td>yes</td><td>session the item is about</td></tr>
+<tr><td><code>kind</code></td><td>`&quot;approval&quot; \</td><td>&quot;question&quot; \</td><td>&quot;blocked&quot; \</td><td>&quot;idle&quot;`</td><td>yes</td><td>semantics in ## Attention lifecycle</td></tr>
+<tr><td><code>text</code></td><td>string</td><td>yes</td><td>human-readable one-liner</td></tr>
+<tr><td><code>createdAt</code></td><td>string</td><td>yes</td><td></td></tr>
+<tr><td><code>resolvedAt</code></td><td>string</td><td>no</td><td>set at most once, alongside <code>answer</code></td></tr>
+<tr><td><code>answer</code></td><td>string</td><td>no</td><td>the delivered answer; absent for dismissals</td></tr>
+</table>
+
+<pre class="code" data-lang="ts">
+type AttentionKind = &quot;approval&quot; | &quot;question&quot; | &quot;blocked&quot; | &quot;idle&quot;;
+
+interface AttentionItem {
+  id: string;
+  sessionId: string;
+  kind: AttentionKind;
+  text: string;
+  createdAt: string;
+  resolvedAt?: string; // set exactly once, if ever
+  answer?: string; // set exactly once, alongside resolvedAt
+}
+</pre>
+
+<h4>archived[]</h4>
+
+<p>Tombstone index of recently closed sessions, oldest first:</p>
+
+<table>
+<tr><th>field</th><th>type</th><th>contract</th></tr>
+<tr><td><code>id</code></td><td>string</td><td>closed <code>sessionId</code></td></tr>
+<tr><td><code>path</code></td><td>string</td><td>archive record path, e.g. <code>archive/2026-08/s-c0de.json</code></td></tr>
+<tr><td><code>closedAt</code></td><td>string</td><td>mirrors the archive record</td></tr>
+</table>
+
+<p>Capped at 200 entries; on overflow the oldest link is dropped. The archive</p>
+<p>tree itself is never pruned — <code>archived[]</code> is a recent-closers index for</p>
+<p>boards, not the history of record.</p>
+
+<h4>Invariants</h4>
+
+<p>1. <b>Open until closed.</b> A session exists in <code>sessions</code> from</p>
+<p>   <code>session_start</code> until a proper close: the <code>kill</code> op, a reporter</p>
+<p>   farewell (<code>agent_end</code> with <code>reason:&quot;exit&quot;</code>), or the hub-restart reaper</p>
+<p>   (invariant 8). A crashed reporter does not close its session — the</p>
+<p>   record stays until a close path runs.</p>
+<p>2. <b>Close path is remove-then-archive, one rename.</b> On close the record</p>
+<p>   is deleted from <code>sessions</code>, the full record is written to</p>
+<p>   <code>archive/YYYY-MM/&lt;id&gt;.json</code> (with <code>closedAt</code>, <code>closedBy</code>,</p>
+<p>   <code>finalSummary</code>, resolution tail — ## archive), and an <code>archived[]</code></p>
+<p>   link is appended. All three land in a single atomic status.json</p>
+<p>   rewrite, ordered after the archive file is durably written.</p>
+<p>3. <b><code>log</code> is a link, never content.</b> Status must stay small and cheap</p>
+<p>   to rewrite on every event; the raw stream lives in <code>logs/&lt;id&gt;.jsonl</code>.</p>
+<p>4. <b>Single writer.</b> Exactly one hub process (flock-guarded) writes;</p>
+<p>   every other process reads.</p>
+<p>5. <b>Atomic rewrite</b> for every write (tmp + fsync + rename).</p>
+<p>6. <b>Unknown fields ignored.</b> Readers tolerate unknown fields at every</p>
+<p>   level — forward compatibility (## Versioning).</p>
+<p>7. <b><code>version</code> is the first field</b> of the meta block, so a reader can</p>
+<p>   reject an unknown future format before parsing further.</p>
+<p>8. <b>Crash recovery.</b> On start the hub loads the existing status.json;</p>
+<p>   sessions that do not re-announce via <code>session_start</code> within a 60s</p>
+<p>   grace window are closed and archived with <code>closedBy:&quot;hub-restart&quot;</code> and</p>
+<p>   a <code>finalSummary</code> synthesized from the record&#x27;s last <code>description</code>.</p>
+<p>   Reporters announce on every start, so a still-running omp session</p>
+<p>   re-attaches and keeps its record untouched.</p>
+
+<h4>Example</h4>
+
+<p>Realistic mid-flight state — one attached peer waiting on an approval, one</p>
+<p>worker idle, two open attention items:</p>
+
+<pre class="code" data-lang="jsonc">
+{
+  // hub meta block
+  &quot;version&quot;: 1,
+  &quot;startedAt&quot;: &quot;2026-08-30T17:42:10.113Z&quot;,
+  &quot;pid&quot;: 43187,
+  &quot;nextAttentionId&quot;: 8,
+  &quot;digest&quot;: &quot;tilt needs approval for deploy canary; atlas is idle with no assigned work&quot;,
+  &quot;agentSession&quot;: &quot;s-hub-01&quot;,
+
+  &quot;sessions&quot;: {
+    &quot;s-9f2c&quot;: {
+      &quot;status&quot;: &quot;open&quot;,
+      &quot;kind&quot;: &quot;peer&quot;,
+      &quot;cwd&quot;: &quot;/Users/yuri/DotFiles&quot;,
+      &quot;title&quot;: &quot;review the tilt deploy plan&quot;,
+      &quot;model&quot;: &quot;aihub/glm-5.3-flash&quot;,
+      &quot;description&quot;: &quot;mid-review of deploy plan; paused on canary approval&quot;,
+      &quot;phase&quot;: &quot;waiting&quot;,
+      &quot;phaseHistory&quot;: [
+        { &quot;phase&quot;: &quot;working&quot;, &quot;at&quot;: &quot;2026-08-30T17:43:02.881Z&quot; },
+        { &quot;phase&quot;: &quot;waiting&quot;, &quot;at&quot;: &quot;2026-08-30T17:52:19.400Z&quot; }
+      ],
+      &quot;log&quot;: &quot;logs/s-9f2c.jsonl&quot;,
+      &quot;toolCounts&quot;: { &quot;read&quot;: 14, &quot;edit&quot;: 3, &quot;bash&quot;: 7 },
+      &quot;turns&quot;: 9,
+      &quot;startedAt&quot;: &quot;2026-08-30T17:42:58.201Z&quot;,
+      &quot;lastActivity&quot;: &quot;2026-08-30T17:52:19.400Z&quot;
+    },
+    &quot;s-4a71&quot;: {
+      &quot;status&quot;: &quot;open&quot;,
+      &quot;kind&quot;: &quot;worker&quot;,
+      &quot;cwd&quot;: &quot;/Users/yuri/DotFiles/pi-extentions/pi-hub&quot;,
+      &quot;title&quot;: &quot;worker atlas&quot;,
+      &quot;model&quot;: &quot;aihub/glm-5.3-flash&quot;,
+      &quot;description&quot;: &quot;idle since finishing the docs skeleton&quot;,
+      &quot;phase&quot;: &quot;idle&quot;,
+      &quot;log&quot;: &quot;logs/s-4a71.jsonl&quot;,
+      &quot;toolCounts&quot;: { &quot;read&quot;: 6, &quot;write&quot;: 2 },
+      &quot;turns&quot;: 3,
+      &quot;startedAt&quot;: &quot;2026-08-30T18:01:44.710Z&quot;,
+      &quot;lastActivity&quot;: &quot;2026-08-30T18:14:02.355Z&quot;,
+      &quot;agentSurface&quot;: &quot;watcher&quot;
+    }
+  },
+
+  &quot;attention&quot;: [
+    {
+      &quot;id&quot;: &quot;att-6&quot;,
+      &quot;sessionId&quot;: &quot;s-9f2c&quot;,
+      &quot;kind&quot;: &quot;approval&quot;,
+      &quot;text&quot;: &quot;approve deploy canary 2/3 for tilt&quot;,
+      &quot;createdAt&quot;: &quot;2026-08-30T17:52:19.400Z&quot;
+    },
+    {
+      &quot;id&quot;: &quot;att-7&quot;,
+      &quot;sessionId&quot;: &quot;s-4a71&quot;,
+      &quot;kind&quot;: &quot;question&quot;,
+      &quot;text&quot;: &quot;atlas asks: target branch for the docs PR?&quot;,
+      &quot;createdAt&quot;: &quot;2026-08-30T18:13:58.020Z&quot;
+    }
+  ],
+
+  &quot;archived&quot;: [
+    {
+      &quot;id&quot;: &quot;s-c0de&quot;,
+      &quot;path&quot;: &quot;archive/2026-08/s-c0de.json&quot;,
+      &quot;closedAt&quot;: &quot;2026-08-30T16:59:41.900Z&quot;
+    }
+  ]
+}
+</pre>
+
+<h3 id="logs">logs</h3>
+
+<p><code>~/.hub/logs/&lt;id&gt;.jsonl</code> — one append-only file per session, created at</p>
+<p><code>session_start</code>. The first line is always a <code>system</code> event</p>
+<p>recording the <code>session_start</code> frame, including the <code>attached</code> flag (true</p>
+<p>when the plugin attached to an already-running session) and the session</p>
+<p><code>kind</code>, so a log file self-describes how it began.</p>
+
+<p>Event line shape:</p>
+
+<table>
+<tr><th>field</th><th>type</th><th>required</th><th>contract</th></tr>
+<tr><td><code>t</code></td><td>string</td><td>yes</td><td>UTC timestamp</td></tr>
+<tr><td><code>sessionId</code></td><td>string</td><td>yes</td><td>denormalized from the filename so lines are self-contained</td></tr>
+<tr><td><code>kind</code></td><td>`&quot;prompt&quot; \</td><td>&quot;tool&quot; \</td><td>&quot;result&quot; \</td><td>&quot;think&quot; \</td><td>&quot;message&quot; \</td><td>&quot;system&quot;`</td><td>yes</td><td>see table below</td></tr>
+<tr><td><code>text</code></td><td>string</td><td>yes</td><td>the payload; tool args/results are summarized, truncated to 2 KB per line</td></tr>
+<tr><td><code>meta</code></td><td>object</td><td>no</td><td>free-form per-kind extras; readers ignore unknown keys</td></tr>
+</table>
+
+<table>
+<tr><th>kind</th><th>emitted on</th><th>typical <code>meta</code></th></tr>
+<tr><td><code>prompt</code></td><td><code>user_message</code> frame</td><td>—</td></tr>
+<tr><td><code>tool</code></td><td><code>tool_call</code> frame</td><td><code>{ tool, argsSummary }</code></td></tr>
+<tr><td><code>result</code></td><td>tool result</td><td><code>{ tool, ok, durationMs }</code></td></tr>
+<tr><td><code>think</code></td><td>assistant thinking</td><td>—</td></tr>
+<tr><td><code>message</code></td><td><code>assistant_message</code> frame</td><td>—</td></tr>
+<tr><td><code>system</code></td><td>lifecycle events</td><td>`{ event: &quot;session_start&quot; \</td><td>&quot;agent_end&quot; \</td><td>&quot;close&quot;, ... }`</td></tr>
+</table>
+
+<p>Durability contract: lines are appended with a single <code>write(2)</code> at</p>
+<p><code>O_APPEND</code>; a crash may lose the tail of the last line but never corrupts</p>
+<p>earlier ones. On read, a trailing line without a newline is discarded.</p>
+<p>Files are never rewritten or compacted — the only mutation is append.</p>
+<p>Log files outlive their sessions: archive records link to them and they</p>
+<p>are never deleted (retention is explicitly out of scope for v1).</p>
+
+<p><code>hub log -f</code> (03-cli) tails this file; the web stream (04-web) replays</p>
+<p>it. Neither extracts content from status.json — the <code>log</code> link is the</p>
+<p>contract between them.</p>
+
+<h3 id="summaries-jsonl">summaries.jsonl</h3>
+
+<p><code>~/.hub/summaries.jsonl</code> — one global append-only file, the AI digest</p>
+<p>rail. Line shape:</p>
+
+<table>
+<tr><th>field</th><th>type</th><th>required</th><th>contract</th></tr>
+<tr><td><code>t</code></td><td>string</td><td>yes</td><td>UTC timestamp</td></tr>
+<tr><td><code>sessionId</code></td><td>string</td><td>yes</td><td>session the line is about</td></tr>
+<tr><td><code>kind</code></td><td>`&quot;summary&quot; \</td><td>&quot;resolution&quot;`</td><td>yes</td><td>see below</td></tr>
+<tr><td><code>text</code></td><td>string</td><td>yes</td><td>summary text, or resolution description</td></tr>
+<tr><td><code>by</code></td><td>string</td><td>yes</td><td>author: <code>agent</code> for summaries; the resolver (<code>cli</code>, <code>web</code>, a closing session id, <code>hub-restart</code>, <code>auto</code>) for resolutions</td></tr>
+</table>
+
+<ul><li><code>kind:&quot;summary&quot;</code> — written once per agent cycle per session: what</li>
+</ul><p>  happened since the previous line. Authored by the hub agent; the **hub</p>
+<p>  process performs the write** (the agent asks via ops), keeping</p>
+<p>  <code>summaries.jsonl</code> under the same single-writer rule as <code>status.json</code>.</p>
+<ul><li><code>kind:&quot;resolution&quot;</code> — appended by the hub process the moment an</li>
+</ul><p>  AttentionItem resolves. <code>text</code> is <code>resolved &lt;item.id&gt; (&lt;kind&gt;): &lt;answer&gt;</code>;</p>
+<p>  for dismissals the answer portion reads <code>dismissed</code>, for agent</p>
+<p>  auto-resolves <code>auto</code>. The full answer travels in the line so the</p>
+<p>  history survives the item&#x27;s removal from <code>status.json</code>.</p>
+
+<p>Resolutions recorded as <code>kind:&quot;resolution&quot;</code> with the answer — this is the</p>
+<p>audit trail for attention (## Attention lifecycle). Append-only, same</p>
+<p>durability rules as ## logs (single append per line, torn tail</p>
+<p>discarded). No per-line schema version: new optional fields may appear;</p>
+<p>readers ignore unknown keys.</p>
+
+<h3 id="archive">archive</h3>
+
+<p><code>~/.hub/archive/YYYY-MM/&lt;id&gt;.json</code> — one immutable record per closed</p>
+<p>session, filed under the UTC month of <code>closedAt</code>. Written once, never</p>
+<p>rewritten; the <code>archived[]</code> link in <code>status.json</code> points at it.</p>
+
+<p>Contents: the <code>SessionRecord</code> exactly as last seen, plus the close tail:</p>
+
+<table>
+<tr><th>field</th><th>type</th><th>required</th><th>contract</th></tr>
+<tr><td><i>(SessionRecord fields)</i></td><td>—</td><td>yes</td><td>as-last-seen snapshot, including <code>phase</code>, <code>toolCounts</code>, <code>turns</code>; <code>status</code> freezes at <code>&quot;closing&quot;</code></td></tr>
+<tr><td><code>closedAt</code></td><td>string</td><td>yes</td><td>UTC close time; also selects the <code>YYYY-MM</code> directory</td></tr>
+<tr><td><code>closedBy</code></td><td>string</td><td>yes</td><td><code>cli</code>, <code>web</code>, the closing session&#x27;s id (via <code>hub_kill_worker</code>), <code>self</code> (reporter farewell), or <code>hub-restart</code></td></tr>
+<tr><td><code>finalSummary</code></td><td>string</td><td>yes</td><td>last agent summary for the session; synthesized from the last <code>description</code> when the agent is off</td></tr>
+<tr><td><code>resolutions</code></td><td><code>AttentionItem[]</code></td><td>no</td><td>every item resolved during the session&#x27;s life, in resolve order, <code>resolvedAt</code> set</td></tr>
+<tr><td><code>version</code></td><td>number</td><td>no</td><td>status.json schema version at close time, for future-format forensics</td></tr>
+</table>
+
+<p><code>log</code> inside the record stays a link; the log file is retained. Close</p>
+<p>orders: the <code>kill</code> op (graceful: set <code>status:&quot;closing&quot;</code> → reporter</p>
+<p>farewell → archive write), reporter farewell, hub-restart reaper. All</p>
+<p>three funnel through the same one-rename close path (invariant 2).</p>
+
+<p>Example — the record for the session tombstoned in the status.json</p>
+<p>example above:</p>
+
+<pre class="code" data-lang="jsonc">
+{
+  // SessionRecord snapshot, as last seen
+  &quot;status&quot;: &quot;closing&quot;,
+  &quot;kind&quot;: &quot;peer&quot;,
+  &quot;cwd&quot;: &quot;/Users/yuri/DotFiles&quot;,
+  &quot;title&quot;: &quot;draft hub data contracts&quot;,
+  &quot;model&quot;: &quot;aihub/glm-5.3-flash&quot;,
+  &quot;description&quot;: &quot;finished; closed after final summary&quot;,
+  &quot;phase&quot;: &quot;idle&quot;,
+  &quot;phaseHistory&quot;: [
+    { &quot;phase&quot;: &quot;working&quot;, &quot;at&quot;: &quot;2026-08-30T15:10:02.001Z&quot; },
+    { &quot;phase&quot;: &quot;idle&quot;, &quot;at&quot;: &quot;2026-08-30T16:58:59.700Z&quot; }
+  ],
+  &quot;log&quot;: &quot;logs/s-c0de.jsonl&quot;,
+  &quot;toolCounts&quot;: { &quot;read&quot;: 31, &quot;edit&quot;: 12, &quot;bash&quot;: 4 },
+  &quot;turns&quot;: 22,
+  &quot;startedAt&quot;: &quot;2026-08-30T15:09:44.500Z&quot;,
+  &quot;lastActivity&quot;: &quot;2026-08-30T16:59:40.900Z&quot;,
+
+  // close tail
+  &quot;closedAt&quot;: &quot;2026-08-30T16:59:41.900Z&quot;,
+  &quot;closedBy&quot;: &quot;cli&quot;,
+  &quot;finalSummary&quot;: &quot;Wrote the data-contract draft: status.json, logs, summaries, archive, hub.sock framing, attention lifecycle; log retention left as an open question for review.&quot;,
+  &quot;resolutions&quot;: [
+    {
+      &quot;id&quot;: &quot;att-3&quot;,
+      &quot;sessionId&quot;: &quot;s-c0de&quot;,
+      &quot;kind&quot;: &quot;question&quot;,
+      &quot;text&quot;: &quot;keep raw logs forever?&quot;,
+      &quot;createdAt&quot;: &quot;2026-08-30T15:40:12.300Z&quot;,
+      &quot;resolvedAt&quot;: &quot;2026-08-30T15:41:02.000Z&quot;,
+      &quot;answer&quot;: &quot;yes for v1; retention is out of scope&quot;
+    }
+  ],
+  &quot;version&quot;: 1
+}
+</pre>
+
+<h3 id="hub-sock">hub.sock</h3>
+
+<p><code>$OMP_HUB_SOCK</code> (default <code>~/.hub/hub.sock</code>) — a Unix domain SOCK_STREAM</p>
+<p>socket. The protocol is newline-delimited JSON frames in both directions:</p>
+<p>one JSON object per <code>\n</code>-terminated frame, UTF-8, no framing escapes.</p>
+<p>Every frame carries <code>v</code> (frame-protocol version, currently <code>1</code>). The hub</p>
+<p>is the server; clients are the plugin reporter (one connection per</p>
+<p>session), the CLI (one-shot cmd/reply), the web server (long-lived,</p>
+<p>subscribed), and the hub agent (long-lived, subscribed).</p>
+
+<h4>Handshake</h4>
+
+<p>First frame from any client:</p>
+
+<pre class="code" data-lang="jsonc">
+{ &quot;v&quot;: 1, &quot;ch&quot;: &quot;hello&quot;, &quot;client&quot;: &quot;cli&quot;, &quot;subscribe&quot;: false }
+</pre>
+
+<p><code>client</code> is <code>cli | web | plugin | agent</code>; <code>subscribe: true</code> (web server,</p>
+<p>hub agent) additionally opts into unsolicited <code>event</code> frames (below). The</p>
+<p>hub replies <code>{ &quot;v&quot;: 1, &quot;ch&quot;: &quot;hello&quot;, &quot;hub&quot;: { &quot;version&quot;: 1, &quot;startedAt&quot;: &quot;...&quot; } }</code>.</p>
+<p>A major-version mismatch is answered with an error frame (<code>bad-version</code>)</p>
+<p>and the connection is closed; minor drift is tolerated — unknown fields</p>
+<p>ignored, the same rule as <code>status.json</code>.</p>
+
+<h4>Reporter frames (plugin → hub, `ch:&quot;report&quot;`)</h4>
+
+<p>Emitted by the omp plugin (05-omp-plugin) as the session runs. Shape:</p>
+<p><code>{ v, ch:&quot;report&quot;, frame: &lt;name&gt;, ...payload }</code>. Reporter frames are</p>
+<p>fire-and-forget — no reply, no cmdId; socket order is record order.</p>
+
+<table>
+<tr><th>frame</th><th>payload</th><th>effect on status.json</th></tr>
+<tr><td><code>session_start</code></td><td><code>sessionId</code>, <code>kind</code>, <code>cwd</code>, <code>model</code>, <code>attached</code></td><td>upserts the SessionRecord; <code>attached</code> is true when the plugin attached to an already-running session</td></tr>
+<tr><td><code>user_message</code></td><td><code>sessionId</code>, <code>text</code></td><td>bumps <code>turns</code> and <code>lastActivity</code></td></tr>
+<tr><td><code>assistant_message</code></td><td><code>sessionId</code>, <code>text</code></td><td>bumps <code>lastActivity</code></td></tr>
+<tr><td><code>tool_call</code></td><td><code>sessionId</code>, <code>tool</code>, <code>args</code></td><td>bumps <code>toolCounts[tool]</code></td></tr>
+<tr><td><code>agent_end</code></td><td><code>sessionId</code>, <code>reason</code></td><td>`reason: &quot;complete&quot; \</td><td>&quot;interrupted&quot; \</td><td>&quot;exit&quot;<code>; </code>exit` is a proper close (self-exit)</td></tr>
+</table>
+
+<pre class="code" data-lang="jsonc">
+{ &quot;v&quot;: 1, &quot;ch&quot;: &quot;report&quot;, &quot;frame&quot;: &quot;tool_call&quot;, &quot;sessionId&quot;: &quot;s-9f2c&quot;, &quot;tool&quot;: &quot;bash&quot;, &quot;args&quot;: { &quot;command&quot;: &quot;bun test&quot; } }
+</pre>
+
+<h4>cmd/reply frames (any client → hub)</h4>
+
+<table>
+<tr><th>field</th><th>required</th><th>contract</th></tr>
+<tr><td><code>v</code></td><td>yes</td><td>protocol version</td></tr>
+<tr><td><code>ch</code></td><td>yes</td><td><code>&quot;cmd&quot;</code></td></tr>
+<tr><td><code>cmdId</code></td><td>yes</td><td>client-minted correlation id (e.g. <code>cli-43187-12</code>); replies echo it; replies may arrive out of order</td></tr>
+<tr><td><code>op</code></td><td>yes</td><td>one of the eight ops below</td></tr>
+<tr><td>payload</td><td>per op</td><td>below</td></tr>
+</table>
+
+<p>Reply frames: <code>{ v, ch:&quot;reply&quot;, cmdId, ok:true, result }</code> or</p>
+<p><code>{ v, ch:&quot;reply&quot;, cmdId, ok:false, error: { code, message } }</code>. Every op</p>
+<p>runs under a 30s deadline; expiry replies <code>error.code:&quot;timeout&quot;</code>. <code>tool</code></p>
+<p>is the one exception: when queued behind a busy target session its</p>
+<p>deadline extends to 120s from first execution.</p>
+
+<h4>Ops</h4>
+
+<table>
+<tr><th>op</th><th>request</th><th>reply <code>result</code></th><th>notes</th></tr>
+<tr><td><code>list</code></td><td><code>{}</code></td><td><code>{ hub, sessions, attention, archived }</code></td><td>full status snapshot; boards use it as their refresh base</td></tr>
+<tr><td><code>send</code></td><td><code>{ sessionId, text }</code></td><td><code>{ queued: true }</code></td><td>delivers <code>text</code> as a user turn to the session</td></tr>
+<tr><td><code>tool</code></td><td><code>{ sessionId, tool, args }</code></td><td>the tool&#x27;s JSON result</td><td>runs the tool inside the target session</td></tr>
+<tr><td><code>spawn</code></td><td><code>{ name?, model? }</code></td><td><code>{ sessionId, name }</code></td><td>spawns a worker session (<code>kind:&quot;worker&quot;</code>)</td></tr>
+<tr><td><code>kill</code></td><td><code>{ sessionId }</code></td><td><code>{ closedAt }</code></td><td>proper close: <code>status:&quot;closing&quot;</code> → graceful farewell → archive write; replies after the close path completes</td></tr>
+<tr><td><code>attention</code></td><td>see below</td><td>see below</td><td>list / raise / dismiss — one op, three actions</td></tr>
+<tr><td><code>answer</code></td><td><code>{ id, text }</code></td><td><code>{ item }</code></td><td>delivers <code>text</code> to the item&#x27;s session (send semantics), then resolves the item</td></tr>
+<tr><td><code>assign</code></td><td><code>{ sessionId, task }</code></td><td><code>{ item }</code></td><td>creates the pending assigned-work item (## Attention lifecycle)</td></tr>
+</table>
+
+<p>The <code>attention</code> op:</p>
+
+<table>
+<tr><th>action</th><th>request</th><th>reply</th></tr>
+<tr><td>list</td><td><code>{}</code></td><td><code>{ items: AttentionItem[] }</code> — open items only, newest first</td></tr>
+<tr><td>raise</td><td><code>{ action: &quot;raise&quot;, item: { sessionId, kind, text } }</code></td><td><code>{ item }</code> — hub agent only; other clients get error <code>forbidden</code></td></tr>
+<tr><td>dismiss</td><td><code>{ action: &quot;dismiss&quot;, id }</code></td><td><code>{ item }</code> — resolve without answer; the resolution line records <code>dismissed</code></td></tr>
+</table>
+
+<p>(03-cli maps the board&#x27;s <code>d</code> key to dismiss and <code>a</code> to assign;</p>
+<p><code>hub_attention</code> / <code>hub_answer</code> / <code>hub_assign</code> in 05-omp-plugin map to</p>
+<p>list / answer / assign.)</p>
+
+<h4>Event frames (hub → subscribed clients, `ch:&quot;event&quot;`)</h4>
+
+<p>Clients that subscribed receive unsolicited frames mirroring activity, so</p>
+<p>the web server can feed its SSE stream (04-web) and the agent can watch</p>
+<p>threads without polling:</p>
+
+<pre class="code" data-lang="jsonc">
+{ &quot;v&quot;: 1, &quot;ch&quot;: &quot;event&quot;, &quot;kind&quot;: &quot;attention&quot;, &quot;item&quot;: { &quot;id&quot;: &quot;att-6&quot;, &quot;sessionId&quot;: &quot;s-9f2c&quot;, &quot;kind&quot;: &quot;approval&quot;, &quot;text&quot;: &quot;approve deploy canary 2/3 for tilt&quot;, &quot;createdAt&quot;: &quot;2026-08-30T17:52:19.400Z&quot; } }
+</pre>
+
+<p><code>kind</code> is one of the five reporter frame names (same payload), plus</p>
+<p><code>attention</code> (payload: the touched AttentionItem after the change; a</p>
+<p>removal carries <code>resolvedAt</code>) and <code>phase</code> (payload:</p>
+<p><code>{ sessionId, phase, at }</code>). Event frames are best-effort — a slow</p>
+<p>consumer gets dropped frames, never blocked writers; the <code>list</code> op is the</p>
+<p>authoritative snapshot.</p>
+
+<h4>Error frames and concurrency</h4>
+
+<p>Protocol-level failures (bad <code>v</code>, malformed JSON, unknown <code>ch</code>) get an</p>
+<p>unsolicited <code>{ v, ch:&quot;error&quot;, error: { code, message } }</code> frame with</p>
+<p><code>cmdId</code> when one is known; malformed input closes the connection. Error</p>
+<p>codes: <code>bad-frame</code>, <code>bad-version</code>, <code>unknown-op</code>, <code>forbidden</code>,</p>
+<p><code>no-session</code>, <code>timeout</code>, <code>busy</code>. The hub serializes all state mutations</p>
+<p>(single-writer); concurrent cmds interleave and correlate by <code>cmdId</code>. A</p>
+<p><code>kill</code> of a session with in-flight cmds fails those cmds with</p>
+<p><code>no-session</code>.</p>
+
+<h3 id="attention-lifecycle">Attention lifecycle</h3>
+
+<p>Attention is the queue of things a human should look at. It is</p>
+<p><b>agent-mediated</b>: the hub agent (06-agents-and-skills) watches all</p>
+<p>threads and raises items; surfaces render them; humans resolve them.</p>
+<p><code>attention[]</code> in <code>status.json</code> holds open items only — resolution removes</p>
+<p>the item and appends the permanent record to <code>summaries.jsonl</code>.</p>
+
+<p><b>Kinds</b> (<code>AttentionItem.kind</code>):</p>
+
+<table>
+<tr><th>kind</th><th>meaning</th><th>raised when</th></tr>
+<tr><td><code>approval</code></td><td>a yes/no is needed</td><td>the session asks for approval (tool confirm, deploy gate)</td></tr>
+<tr><td><code>question</code></td><td>the agent asked the human something</td><td>an assistant turn ends with a direct question</td></tr>
+<tr><td><code>blocked</code></td><td>the session cannot proceed</td><td>missing credential, failed dependency, repeated tool failure</td></tr>
+<tr><td><code>idle</code></td><td>the session waits for work — including pending assigned work</td><td><code>agent_end</code> with no follow-up, or an <code>assign</code> op</td></tr>
+</table>
+
+<p><b>Raise.</b> Only the hub agent raises, via the <code>attention</code> op with</p>
+<p><code>action:&quot;raise&quot;</code>; the hub verifies the caller — hello <code>client:&quot;agent&quot;</code></p>
+<p>whose session id matches meta <code>agentSession</code> (the agent itself is spawned</p>
+<p>with <code>OMP_HUB_AGENT=1</code>, 06-agents-and-skills). Raising is idempotent per</p>
+<p><code>(sessionId, kind)</code>: if an open item with that pair exists, its <code>text</code> is</p>
+<p>updated in place and the existing id is returned — no duplicate items</p>
+<p>while a session stays in the same state. A new id is minted only after</p>
+<p>the older item resolved.</p>
+
+<p><b>Resolve.</b> Three paths, all through the hub process, all idempotent:</p>
+
+<table>
+<tr><th>path</th><th>trigger</th><th><code>answer</code></th></tr>
+<tr><td><code>answer</code> op</td><td>human text delivered (CLI board, web input, <code>hub_answer</code>)</td><td>the delivered text</td></tr>
+<tr><td><code>dismiss</code> action</td><td>resolve without replying (board <code>d</code> key, web ✕)</td><td>absent — resolution line reads <code>dismissed</code></td></tr>
+<tr><td>agent auto-resolve</td><td>the agent observes the condition cleared (approval granted in-thread, session unblocked, assigned work picked up)</td><td>absent — resolution line reads <code>auto</code></td></tr>
+</table>
+
+<p>Idempotency rule: the first resolve wins. A resolve on an unknown or</p>
+<p>already-resolved id replies <code>ok:true</code> with the existing item and appends</p>
+<p>nothing — races between CLI and agent must not double-append resolution</p>
+<p>lines. On resolve the item is removed from <code>attention[]</code> in the same</p>
+<p>atomic rewrite that precedes the <code>summaries.jsonl</code> append</p>
+<p>(<code>kind:&quot;resolution&quot;</code>, <code>text: &quot;resolved &lt;id&gt; (&lt;kind&gt;): &lt;answer&gt;&quot;</code>, <code>by</code>:</p>
+<p>the resolver). <code>status.json</code> never holds resolved items; <code>summaries.jsonl</code></p>
+<p>is their only history, and the session&#x27;s archive record folds them into</p>
+<p>its <code>resolutions</code> tail.</p>
+
+<p><b>Assign.</b> The <code>assign</code> op (<code>hub_assign</code>, web assign input, board <code>a</code></p>
+<p>key) targeting an idle session creates a pending item linked to the</p>
+<p>target session: <code>AttentionItem { kind:&quot;idle&quot;, text: &quot;assigned: &lt;task&gt;&quot; }</code>.</p>
+<p>It stays open — the visible marker of outstanding work — until the hub</p>
+<p>agent sees the session leave <code>idle</code> (auto-resolve) or a human dismisses</p>
+<p>or answers it. With the agent off, assigned items resolve only manually.</p>
+
+<p><b>Rendering tie-in.</b> This section is data-only; color belongs to</p>
+<p><code>lib/theme.ts</code> — open items render in the attention color (<code>warn</code></p>
+<p><code>#f5c04e</code>), <code>blocked</code> items in <code>err</code> <code>#ff7a9a</code>, answer inputs and</p>
+<p>selection chrome in <code>accent</code> <code>#70e1c4</code>. The widget (05) and the CLI board</p>
+<p>(03) share that mapping; no surface redefines it.</p>
+
+<h3 id="versioning">Versioning</h3>
+
+<ul><li><code>status.json</code> carries <code>version</code> (currently <code>1</code>) as the first meta</li>
+</ul><p>  field. One integer, additive meaning: a bump signals &quot;readers written</p>
+<p>  for the previous version must still work&quot; — it is required only when a</p>
+<p>  field&#x27;s meaning changes, never when fields are added.</p>
+<ul><li><b>Forward compatibility:</b> readers ignore unknown fields at every level</li>
+</ul><p>  (meta block, SessionRecord, AttentionItem, socket frames, log and</p>
+<p>  summary lines). Writers never remove or repurpose fields within a</p>
+<p>  version. The <code>phase</code> and <code>kind</code> enumerations may grow; readers treat</p>
+<p>  unknown enum values as opaque strings (render generically), never as</p>
+<p>  errors.</p>
+<ul><li><b>Wire:</b> <code>hub.sock</code> frames carry <code>v</code>; the <code>hello</code> handshake</li>
+</ul><p>  negotiates. A major mismatch gets <code>bad-version</code> and a close; because</p>
+<p>  the framing is NDJSON with a version per frame, a hub upgrade can serve</p>
+<p>  mixed client versions across a rolling restart.</p>
+<ul><li><b>Append-only files:</b> <code>logs/&lt;id&gt;.jsonl</code> and <code>summaries.jsonl</code> have no</li>
+</ul><p>  header or version line — their contract is &quot;additive fields only; files</p>
+<p>  are never rewritten&quot;. If a breaking change is ever unavoidable, the</p>
+<p>  file rotates (<code>summaries-2.jsonl</code>) and the active generation is named</p>
+<p>  by a new optional meta field <code>summariesGeneration</code> (decision: rotation</p>
+<p>  over in-place rewrite; rewriting append-only files would break every</p>
+<p>  concurrent reader).</p>
+<ul><li><b>Archive records</b> embed the <code>version</code> they were written at (optional</li>
+</ul><p>  field), so old records stay interpretable if the SessionRecord shape</p>
+<p>  ever drifts.</p>
+<ul><li><b>Atomicity, restated:</b> every <code>status.json</code> rewrite is tmp-write →</li>
+</ul><p>  fsync → rename. Rename is atomic on POSIX; readers never lock. A crash</p>
+<p>  between write and rename leaves <code>status.json.tmp</code>, which the next hub</p>
+<p>  start unlinks. The <code>flock</code> on <code>~/.hub/hub.lock</code> guarantees one writer</p>
+<p>  across crashes — a dead hub&#x27;s lock dies with it, so a restart can</p>
+<p>  always take over and run crash recovery (invariant 8).</p>
+
+<p>---</p>
+
+<p>Cross-references: 01-architecture defines the ports these files sit</p>
+<p>behind (<code>StatusStore</code>, <code>SummaryStore</code>, <code>AttentionStore</code>); 03-cli, 04-web</p>
+<p>and 05-omp-plugin are the read surfaces and the reporter; 06-agents-and-skills</p>
+<p>owns raise and auto-resolve behavior.</p>
+</section>
+<section class="doc" id="doc-03-cli"><div class="doc-tag"><b>CLI</b><span>docs/03-cli.md</span></div><h2 id="sec">hub CLI</h2>
+
+<p>Spec of the <code>hub</code> binary — <code>@yurifrl/hub-cli</code>, sources under <code>cli/src/</code>. The CLI is the terminal surface of pi-hub: the attention board, one-shot verbs, and the full-screen console. Data shapes and hub.sock frames are owned by <code>02-data-contracts.md</code>; theme ownership and layering by <code>01-architecture.md</code>; the web counterpart by <code>04-web.md</code>. Decision records use <b>Decision / Why / Contract</b>. Session display name = worker <code>name</code> if present, else the first 8 chars of <code>sessionId</code>.</p>
+
+<h3 id="bin">bin</h3>
+
+<p><b>Location and role.</b> <code>cli/src/bin.ts</code> is the composition root of <code>@yurifrl/hub-cli</code> (package <code>bin</code> field maps <code>hub</code> → <code>cli/src/bin.ts</code>, run with Bun). It parses argv, loads config, builds the commander program, wires one socket client and one file reader, and maps every failure to an exit code. Command bodies live in <code>cli/src/commands.ts</code>; all rendering lives in <code>cli/src/render/</code> (## Rendering). bin.ts contains no rendering and no domain logic.</p>
+
+<p><b>Commander tree.</b></p>
+
+<pre class="code" data-lang="text">
+hub
+├─ (bare)                        attention board (interactive)
+├─ answer &lt;item&gt; &lt;text...&gt;       reply to an attention item, resolves it
+├─ assign [id] &lt;task...&gt;         give a session work
+├─ log [-f] [id]                 raw session stream
+├─ summaries [id] [--tail N]     AI summary rail
+├─ send [id] &lt;msg...&gt;            deliver a prompt to a session
+├─ tool &lt;id&gt; &lt;tool&gt; [json]       run a tool inside a session (--wait S)
+├─ spawn [--name N] [--model M]  spawn a worker session
+├─ kill &lt;id&gt; [--yes]             close a session (red confirm)
+├─ archive [id]                  list the archive / close+archive a session
+├─ watch                         full-screen split console
+├─ agent [--surface S]           start the hub agent
+└─ web [--port P]                serve the Hub Console
+</pre>
+
+<p>Global flags, accepted before or after any subcommand: <code>--config &lt;path&gt;</code>, <code>--json</code>, <code>--ndjson</code>, <code>--no-color</code>, <code>-h/--help</code>, <code>-V/--version</code>. <code>--json</code> together with <code>--ndjson</code> → usage error, exit code 1. Help and version never open the socket.</p>
+
+<p><b>Config.</b> Resolution order, first hit wins:</p>
+
+<p>1. <code>--config &lt;path&gt;</code> file (path missing or unreadable → usage, exit 1)</p>
+<p>2. environment (<code>OMP_HUB_SOCK</code>, <code>OMP_HUB_MODEL</code>, <code>OMP_BIN</code>, <code>NO_COLOR</code>)</p>
+<p>3. <code>~/.hub/config.json</code> (absent file is not an error)</p>
+<p>4. built-in defaults</p>
+
+<pre class="code" data-lang="types">
+interface HubCliConfig {
+  sock: string            // default ~/.hub/hub.sock; env OMP_HUB_SOCK
+  dataRoot: string        // default ~/.hub
+  replyTimeoutMs: number  // default 10000; expiry maps to exit code 3
+  webPort: number         // default 4820
+  spawnModel: string      // default --model; env OMP_HUB_MODEL
+  ompBin: string          // default &quot;omp&quot;; env OMP_BIN
+  color: boolean          // default true; false when NO_COLOR set or --no-color
+}
+</pre>
+
+<p><b>Boot sequence.</b> parse argv → resolve config → select output policy → dispatch:</p>
+
+<ul><li><i>Hub-backed commands</i> (<code>answer</code>, <code>assign</code>, <code>send</code>, <code>tool</code>, <code>spawn</code>, <code>kill</code>, <code>archive &lt;id&gt;</code>, <code>agent</code>, plus the data feeds of the bare board and <code>watch</code>): open hub.sock at <code>config.sock</code>, write one cmd frame <code>{ v: 1, cmdId, op, args }</code>, await the reply frame with the matching <code>cmdId</code> up to <code>replyTimeoutMs</code>, then close (board and watch hold the connection open for their lifetime). Version mismatch or malformed handshake → exit 2.</li>
+<li><i>Read-only commands</i> (<code>log</code>, <code>summaries</code>, archive listing, picker data): read <code>~/.hub</code> files directly — <code>logs/&lt;id&gt;.jsonl</code>, <code>summaries.jsonl</code>, <code>archive/YYYY-MM/*.json</code>, <code>status.json</code>. No socket needed; they work while the hub is down because the data is on disk.</li>
+</ul>
+<ul><li><b>Decision:</b> the CLI reads files directly for reads and goes through hub.sock for every mutation. <b>Why:</b> the single-writer rule — only the hub process writes status.json — and reads gain nothing from a server round-trip. <b>Contract:</b> the CLI never writes under <code>~/.hub</code>; it never derives session state from anywhere but status.json and the jsonl files; every state change travels as a cmd frame from the locked ops list in <code>02-data-contracts.md</code>.</li>
+</ul>
+<p><b>Exit codes (summary; full table in ## Exit codes).</b> <code>0</code> ok · <code>1</code> usage · <code>2</code> unavailable-hub · <code>3</code> timeout.</p>
+
+<h3 id="hub-bare">hub (bare)</h3>
+
+<p>Bare <code>hub</code> opens the <b>attention board</b>: the terminal rendering of status.json&#x27;s <code>attention[]</code> and <code>sessions</code> map, kept live. It answers one question on open — <i>what needs me?</i> — and lets you act without leaving the screen.</p>
+
+<p><b>Layout</b>, top to bottom:</p>
+
+<p>1. <b>Orientation line</b> — <code>hub · &lt;n&gt; sessions · &lt;n&gt; agent · &lt;sentence&gt;</code>. The sentence is the hub agent&#x27;s one-liner stored in the hub meta block of status.json (field <code>orientation</code>). With the agent off the line degrades to the mechanical counts only.</p>
+<p>2. <b>⚠ NEEDS YOU</b> — one block per AttentionItem, all four kinds (<code>approval | question | blocked | idle</code>), oldest first. Kind badge colors: approval <code>warn</code>, question <code>accent</code>, blocked <code>err</code>, idle <code>muted</code>. Row: <code>▎&lt;kind&gt; &lt;session&gt; &lt;text&gt;</code>; the focused item adds an inline input line <code>› </code> with a block cursor. Typing appends; ⏎ delivers the text to the item&#x27;s session through the same wire path that backs the <code>hub_send_message</code> tool (cmd frame <code>send</code>) and resolves the item server-side (<code>resolvedAt</code> + <code>answer</code> set, a <code>kind:&quot;resolution&quot;</code> line appended to summaries.jsonl); esc cancels.</p>
+<p>3. <b>⏳ RUNNING</b> — one digest line per session in phase <code>working</code> or <code>waiting</code>: <code>▎● &lt;name&gt; &lt;phase&gt; &lt;description&gt; (&lt;age&gt;)</code>. <code>working</code> renders in <code>ok</code>, <code>waiting</code> in <code>warn</code>. The description is the hub agent&#x27;s per-session digest; agent off → excerpt of the last tool_call or message.</p>
+<p>4. <b>💤 IDLE</b> — one row per session in phase <code>idle</code>: <code>▎○ &lt;name&gt; idle &lt;age&gt;  assign: _</code>. Each row owns an inline assign input; typing + ⏎ issues cmd frame <code>assign {id, task}</code> and the session flips to <code>working</code>.</p>
+<p>5. <b>Footer</b> — one muted keys-hint line.</p>
+
+<p>An idle-phase session may also carry an <code>idle</code> AttentionItem raised by the hub agent (&quot;api idle 30m — assign or kill&quot;). Both surfaces stay: NEEDS YOU answers &quot;what needs me&quot;, IDLE answers &quot;what is free&quot;.</p>
+
+<p><b>Keys.</b></p>
+
+<table>
+<tr><th>key</th><th>action</th></tr>
+<tr><td>↑ / ↓</td><td>move focus across interactive slots (attention items, then idle assign inputs)</td></tr>
+<tr><td>any printable</td><td>start the inline input on the focused slot (answer for items, assign for idle rows)</td></tr>
+<tr><td>⏎</td><td>commit the input (cmd frame <code>send</code> or <code>assign</code>); the item resolves; focus advances</td></tr>
+<tr><td>esc</td><td>cancel the open input</td></tr>
+<tr><td>d</td><td>dismiss the focused attention item — resolve without replying</td></tr>
+<tr><td>a</td><td>jump focus to the first idle row&#x27;s assign input</td></tr>
+<tr><td>← / →</td><td>move the cursor inside an open input</td></tr>
+<tr><td>⌫</td><td>delete the character before the cursor</td></tr>
+<tr><td>o</td><td>open the focused session&#x27;s full log view (same surface as <code>hub log &lt;id&gt;</code>, scrollable + following); <code>q</code> returns to the board</td></tr>
+</table>
+
+<ul><li><b>Decision:</b> dismiss is cmd frame <code>attention</code> with args <code>{ action: &quot;dismiss&quot;, id }</code>; the plain listing is <code>attention</code> with no action field. <b>Why:</b> the locked ops list (<code>list/send/tool/spawn/kill/attention/answer/assign</code>) has no dismiss op, and <code>answer</code> with empty text would be indistinguishable from a dropped reply. <b>Contract:</b> frame ownership sits in <code>02-data-contracts.md</code>; this doc fixes only the args shape above.</li>
+</ul>
+<p><b>Calm / empty variant.</b> When <code>attention[]</code> is empty and no session is <code>idle</code>: the orientation sentence renders in <code>ok</code> with the agent&#x27;s all-clear wording, the ⚠ and 💤 zones collapse to a single muted <code>(empty)</code> line each, and the footer trims to <code>l log · q quit</code>. The board never renders empty section chrome or orphaned separators.</p>
+
+<p><b>Refresh.</b> The hub forwards its EventBus events (port ownership in <code>01-architecture.md</code>) to attached CLI connections as push frames; each one is a re-render trigger. Where a hub build does not push, a 2s fallback tick re-issues the <code>attention</code> cmd and re-reads status.json. Every reply frame the CLI receives also triggers a re-render. Frames are diffed by the screen buffer, so a no-change tick writes nothing.</p>
+
+<p><b>Machine modes.</b> <code>hub --json</code> / <code>hub --ndjson</code> skip the alt-screen and print one static snapshot envelope: <code>data: { orientation, attention: AttentionItem[], running: DigestLine[], idle: SessionRef[] }</code> (ndjson: the same object on one line). Identical rule for <code>watch --json</code>.</p>
+
+<h3 id="subcommands">Subcommands</h3>
+
+<p>Shared conventions:</p>
+
+<ul><li>Trailing <code>&lt;text...&gt;</code> / <code>&lt;task...&gt;</code> / <code>&lt;msg...&gt;</code> args join with single spaces — prompts may contain anything, no shell-quoting traps.</li>
+<li><code>&lt;item&gt;</code> / <code>&lt;id&gt;</code> accept unique prefixes; an ambiguous prefix → <code>error.code &quot;ambiguous&quot;</code> with the candidates in <code>detail</code>, exit 1. No match → <code>&quot;not_found&quot;</code>, exit 1.</li>
+<li>Machine modes never prompt, never enter alt-screen, never emit ANSI.</li>
+<li>Each command&#x27;s <code>--json</code> prints exactly one <code>{type:&quot;snapshot&quot;,...}</code> envelope; <code>--ndjson</code> prints one line per event (most commands emit exactly one line; <code>log -f</code> and <code>watch</code> stream).</li>
+<li>Error envelopes go to stdout and exit per ## Exit codes.</li>
+</ul>
+<p><b><code>hub answer &lt;item&gt; &lt;text...&gt;</code></b> — reply to an attention item. Sends cmd frame <code>answer {id, text}</code>; the hub delivers <code>text</code> to the item&#x27;s session and resolves the item.</p>
+<ul><li>Flags: globals only.</li>
+<li>Human: <code>✓ answered &lt;item&gt; → &lt;name&gt;</code> in <code>ok</code>, the delivered text echoed muted.</li>
+<li><code>--json</code>: <code>{type:&quot;snapshot&quot;, data:{answered:true, id, sessionId}}</code>; <code>--ndjson</code>: same, one line.</li>
+<li>Errors: unknown/ambiguous item → 1; hub unreachable → 2; reply timeout → 3.</li>
+</ul>
+<p><b><code>hub assign &lt;id&gt; &lt;task...&gt;</code></b> — give a session work. Cmd frame <code>assign {id, task}</code>; sets the session task and flips phase to <code>working</code>.</p>
+<ul><li><code>&lt;id&gt;</code> optional → fuzzy arrow picker over <b>idle</b> sessions only — assign means giving free capacity work (same component as <code>send</code>). Picker requires a TTY on stdin; without one → usage, exit 1.</li>
+<li>Human: <code>✓ assigned to &lt;name&gt; — &lt;first line of task&gt;</code>.</li>
+<li><code>--json</code>: <code>{type:&quot;snapshot&quot;, data:{assigned:true, id, sessionId, task}}</code>.</li>
+<li>Errors: as <code>answer</code>; picker over zero candidates → <code>not_found</code> 1.</li>
+</ul>
+<p><b><code>hub log [-f] [id]</code></b> — the raw stream of a session: demoted from headline to secondary view, still first-class quality. Reads <code>logs/&lt;id&gt;.jsonl</code> directly, no socket.</p>
+<ul><li><code>&lt;id&gt;</code> optional → picker over open sessions (reads status.json). <code>-f</code> follows: print appended lines, survive truncate/rotate, ctrl-c exits 0.</li>
+<li>Human: each entry as <code>▎&lt;hue&gt; &lt;HH:MM:SS&gt; &lt;kind&gt; &lt;text&gt;</code>; the hue bar is colored by session-hue; <code>kind</code> is the entry frame kind (user_message / assistant_message / tool_call / agent_end). Long lines wrap aligned under the text column.</li>
+<li><code>--json</code> (no <code>-f</code>): one envelope <code>{type:&quot;snapshot&quot;, data:{sessionId, entries: LogEntry[]}}</code>. <code>--json</code> with <code>-f</code> → usage, exit 1 (use <code>--ndjson</code>). <code>--ndjson</code>: one envelope line per entry; with <code>-f</code>, new lines stream forever.</li>
+<li>Errors: unknown session → 1; session open but log file absent → 1 with hint <code>no entries yet</code>. Never exit 2 — this command needs no hub.</li>
+</ul>
+<p><b><code>hub summaries [id] [--tail N]</code></b> — the AI summary rail. Reads summaries.jsonl directly; <code>&lt;id&gt;</code> filters to one session.</p>
+<ul><li><code>--tail N</code>: last N lines, default 20; <code>N &lt; 1</code> (including <code>--tail 0</code>) → usage, exit 1.</li>
+<li>Human: rows <code>▎&lt;muted time&gt; &lt;by&gt; &lt;text&gt;</code>; <code>kind:&quot;summary&quot;</code> rows render <code>warn</code>, <code>kind:&quot;resolution&quot;</code> rows render <code>ok</code>.</li>
+<li><code>--json</code>: <code>{type:&quot;snapshot&quot;, data:{lines: SummaryLine[]}}</code>; <code>--ndjson</code>: one line per row.</li>
+</ul>
+<p><b><code>hub send [id] &lt;msg...&gt;</code></b> — deliver a prompt. Cmd frame <code>send {target, text}</code>.</p>
+<ul><li><code>&lt;id&gt;</code> optional → <b>fuzzy arrow picker</b> (sketch 4): type to filter across name, id, and description; ↑↓ move; ⏎ selects; esc cancels. If <code>&lt;msg&gt;</code> is omitted too, a second inline input asks for the message after selection.</li>
+<li>Human: <code>✓ sent to &lt;name&gt;</code>; <code>--json</code> / <code>--ndjson</code>: <code>{type:&quot;snapshot&quot;, data:{sent:true, sessionId, text}}</code>.</li>
+<li>Errors: picker without TTY → 1; hub unreachable → 2; timeout → 3.</li>
+</ul>
+<p><b><code>hub tool &lt;id&gt; &lt;tool&gt; [json]</code></b> — run a tool inside a session. Cmd frame <code>tool {target, tool, args}</code>.</p>
+<ul><li><code>[json]</code>: optional JSON argument parsed strictly; parse failure → usage, exit 1, with the parse error in the message. Objects, arrays, and scalars pass through as <code>args</code>.</li>
+<li>Wait: <code>--wait &lt;seconds&gt;</code> bounds the tool call (default 30); the reply budget is <code>max(replyTimeoutMs, wait × 1000)</code>.</li>
+<li>Human: result card — header <code>▎tool &lt;tool&gt; → &lt;name&gt;</code>, body pretty-printed result truncated at 50 lines with a muted <code>… N more</code> footer.</li>
+<li><code>--json</code>: <code>{type:&quot;snapshot&quot;, data:{ok, result}}</code> with the tool result verbatim; <code>--ndjson</code>: the same snapshot on one line.</li>
+<li>Errors: tool unknown on the target → reply error envelope, exit 1; budget exhausted → 3.</li>
+</ul>
+<p><b><code>hub spawn [--name N] [--model M]</code></b> — spawn a worker session. Cmd frame <code>spawn {name?, model?}</code>.</p>
+<ul><li><code>--name</code> omitted → the hub picks <code>worker-&lt;n&gt;</code>; <code>--model</code> omitted → <code>config.spawnModel</code> (env OMP_HUB_MODEL).</li>
+<li>Human: <code>✓ spawned &lt;name&gt; (model &lt;M&gt;)</code>; <code>--json</code> / <code>--ndjson</code>: <code>{type:&quot;snapshot&quot;, data:{name, model, sessionId}}</code>.</li>
+<li>Errors: name already live → reply error, exit 1; spawn failure reported by the hub (bad OMP_BIN) → 2.</li>
+</ul>
+<p><b><code>hub kill &lt;id&gt;</code></b> — close a session properly. Cmd frame <code>kill {name}</code>; the hub ends the session, writes the full record to <code>archive/YYYY-MM/&lt;id&gt;.json</code> with <code>closedAt</code>, <code>closedBy</code>, <code>finalSummary</code>, and removes it from status.json.</p>
+<ul><li>Human: confirm prompt rendered in <code>err</code>: <code>kill &lt;name&gt;? [y/N]</code> — default N; anything but <code>y</code>/<code>Y</code> aborts with exit 0 and no changes. <code>--yes</code> skips the prompt. Machine modes and non-TTY stdin never prompt and never assume consent: without <code>--yes</code> the invocation is a usage error, exit 1.</li>
+<li>Human success: <code>✓ killed &lt;name&gt; — archived to archive/YYYY-MM/&lt;id&gt;.json</code>.</li>
+<li><code>--json</code> / <code>--ndjson</code>: <code>{type:&quot;snapshot&quot;, data:{killed:true, id, archivedTo}}</code>.</li>
+<li>Errors: unknown session → 1; hub unreachable → 2.</li>
+</ul>
+<p><b><code>hub archive [id]</code></b> — two modes. <b>List</b> (no <code>&lt;id&gt;</code>): read-only listing of <code>archive/YYYY-MM/*.json</code>, no socket. <b>Close</b> (<code>&lt;id&gt;</code>): cmd frame <code>archive {id}</code>; the hub closes the live session exactly like <code>kill</code> but records <code>closedBy:&quot;archive&quot;</code>.</p>
+<ul><li>List human: table <code>id · closedAt · closedBy · finalSummary (first 60 chars)</code>, newest first. <code>--json</code> / <code>--ndjson</code>: <code>{type:&quot;snapshot&quot;, data:{entries: ArchiveEntry[]}}</code>.</li>
+<li>Close human: <code>✓ archived &lt;id&gt;</code>; <code>--json</code>: <code>{type:&quot;snapshot&quot;, data:{archived:true, id, path}}</code>.</li>
+<li>Errors: close → as <code>kill</code>; unreadable archive dir → 1 with the path in the message.</li>
+</ul>
+<p><b><code>hub watch</code></b> — the full-screen console (alt-screen): <b>attention rail on top, live log below</b> (sketch 3). Keys: <code>l</code> log-only mode (attention rail hidden), <code>a</code> attention-only mode (log pane hidden), <code>1-9</code> pin the nth session to the log pane (pin again to unpin), <code>/</code> filter prompt (substring across session name and entry text; esc clears), <code>q</code> quit. The attention rail supports the board&#x27;s inline model in full: ↑↓ focus, ←/→/⌫ edit, type + ⏎ answers, <code>d</code> dismisses. The log pane tails all open sessions merged by time with hue bars per session; pinned, it shows one session only.</p>
+<ul><li>Machine modes: static snapshot (attention items + last 50 log lines), no alt-screen.</li>
+<li>Errors: hub unreachable while open is a rendered state, not a crash — the attention rail shows <code>(hub offline)</code> muted, the log pane keeps working from <code>logs/*.jsonl</code>; exit happens only on <code>q</code>.</li>
+<li><b>Decision:</b> <code>watch</code> degrades instead of failing on hub loss. <b>Why:</b> it is a viewer; killing the console because the hub restarted would destroy the operator&#x27;s context. <b>Contract:</b> mutations attempted while offline produce an inline <code>err</code> line in the rail, never a process exit.</li>
+</ul>
+<p><b><code>hub agent [--surface S]</code></b> — start the hub&#x27;s own agent: an <code>omp --mode acp</code> child via the omp_agent adapter, env <code>OMP_HUB_AGENT=1</code>, recorded with <code>kind:&quot;agent&quot;</code> in status.json.</p>
+<ul><li><code>--surface S</code>: writes <code>~/.hub/agents/&lt;name&gt;/surface.json</code> declaring the <code>agentSurface</code> id (default <code>watcher</code>; demo surface <code>pending</code>). Surface ownership in <code>06-agents-and-skills.md</code>.</li>
+<li>Human: <code>✓ hub agent started (surface watcher)</code>; <code>--json</code> / <code>--ndjson</code>: <code>{type:&quot;snapshot&quot;, data:{started:true, name, surface}}</code>.</li>
+<li>Errors: agent already running → reply error envelope <code>busy</code>, exit 1, hint <code>hub kill &lt;name&gt;</code>; <code>omp</code> binary missing per OMP_BIN → 2.</li>
+</ul>
+<p><b><code>hub web [--port P]</code></b> — serve the Hub Console (<code>@yurifrl/hub-web</code>); routes and SSE are owned by <code>04-web.md</code>.</p>
+<ul><li><code>--port P</code> defaults to <code>config.webPort</code> (4820); binds <code>127.0.0.1</code> only. Opens the browser on start; with non-TTY stdout it prints the URL and skips opening. Runs foreground; ctrl-c exits 0.</li>
+<li><code>--json</code> / <code>--ndjson</code> → usage, exit 1: a server has no snapshot semantics.</li>
+<li>Errors: port busy → 2 with the port in the message.</li>
+</ul>
+<h3 id="rendering">Rendering</h3>
+
+<p>All rendering lives in <code>cli/src/render/</code>; commands never emit ANSI themselves — commands produce data, renderers produce frames.</p>
+
+<p><b>Theme → ANSI.</b> <code>lib/theme.ts</code> is the single token definition (ownership in <code>01-architecture.md</code>); the CLI maps each token to escape sequences:</p>
+
+<table>
+<tr><th>token</th><th>hex</th><th>ANSI truecolor</th><th>semantics in the CLI</th></tr>
+<tr><td>accent</td><td><code>#70e1c4</code></td><td><code>38;2;112;225;196</code></td><td>chrome, selection, cursor, question badge</td></tr>
+<tr><td>ok</td><td><code>#3fd68f</code></td><td><code>38;2;63;214;143</code></td><td>running, ✓ confirmations, resolutions</td></tr>
+<tr><td>warn</td><td><code>#f5c04e</code></td><td><code>38;2;245;192;78</code></td><td>attention badges and borders, waiting, summaries</td></tr>
+<tr><td>err</td><td><code>#ff7a9a</code></td><td><code>38;2;255;122;154</code></td><td>blocked, kill confirm, errors</td></tr>
+<tr><td>muted</td><td><code>#8b97b0</code></td><td><code>38;2;139;151;176</code></td><td>timestamps, ids, hints, footers</td></tr>
+</table>
+
+<p>Fallback chain: truecolor → nearest 256-color cube entry → bold/plain. <code>--no-color</code> or <code>NO_COLOR</code> in the environment makes every token function return empty prefixes. Machine-mode output never carries ANSI regardless of flags.</p>
+
+<p><b>Session hue.</b> <code>session-hue = hash(sessionId) mod 216</code>, rendered as cube index <code>16 + h</code> — the 6×6×6 cube, skipping the 16 base terminal colors. Every line belonging to a session is prefixed with a two-cell bar <code>▎</code> in that hue: board rows, log lines, picker rows. <b>Decision:</b> the hue derives only from <code>sessionId</code>, never from the name. <b>Why:</b> names change (<code>worker-3</code> renamed), ids do not; the bar must keep tracking the session across every surface. <b>Contract:</b> <code>04-web.md</code> uses the identical hash so CLI and web agree on a session&#x27;s color.</p>
+
+<p><b>Alt-screen lifecycle.</b> The board, <code>watch</code>, the full log view (via <code>o</code>), and pickers enter alt-screen (<code>smcup</code>), hide the cursor while a frame is stable, and restore the terminal on every exit path — <code>q</code>, ctrl-c, error, crash (an exit hook re-issues <code>rmcup</code> and shows the cursor). <code>log -f</code> in a TTY does not use alt-screen: it prints scrolling lines with tail semantics; ctrl-c exits 0.</p>
+
+<p><b>Re-render triggers.</b> EventBus push frames over the socket, every reply frame, the 2s fallback tick, and keypresses. Frames pass through the diffing buffer; a frame with zero diffs writes nothing.</p>
+
+<p><b>Screen buffer — <code>cli/src/render/</code>.</b></p>
+
+<pre class="code" data-lang="types">
+interface ScreenBuffer {
+  resize(cols: number, rows: number): void
+  write(cells: Cell[][]): void     // full frame in, diff computed
+  flush(): string                  // minimal ANSI: cursor moves + changed spans
+  enterAlt(): void
+  leaveAlt(): void
+}
+
+type Cell = { ch: string; fg?: ThemeToken | Hue; bg?: ThemeToken; bold?: boolean }
+</pre>
+
+<ul><li><code>screen.ts</code> — the buffer above: cell grid, diffing, flush, alt-screen enter/leave, cursor management. Owns every raw ANSI byte emitted by the CLI.</li>
+<li><code>board.ts</code> — board and watch attention-rail layout: zone stack, the focus model (ordered interactive slots), calm-variant collapse. Pure function: status snapshot + focus in → cells out.</li>
+<li><code>stream.ts</code> — log and summary lines: hue bars, kind glyphs, wrapping aligned to the text column, viewport scrolling with scrollback (full log view), pinned and filtered selection.</li>
+<li><code>inputs.ts</code> — key decoding and inline input state: raw-mode bytes → key events; per-slot editor (text, cursor, per-session answer history); focus movement.</li>
+</ul>
+<pre class="code" data-lang="types">
+type Key =
+  | { kind: &quot;char&quot;; char: string }
+  | { kind: &quot;up&quot; | &quot;down&quot; | &quot;enter&quot; | &quot;escape&quot; | &quot;backspace&quot; | &quot;left&quot; | &quot;right&quot; }
+  | { kind: &quot;ctrl-c&quot; }
+  | { kind: &quot;ignore&quot; }
+</pre>
+
+<p><b>Raw-mode single keypress.</b> While a board-family surface is open, stdin runs in raw mode; each read chunk decodes to at most one logical key — escape sequences are consumed atomically, unknown multi-byte sequences map to <code>{kind:&quot;ignore&quot;}</code> and never leak as garbage text. ctrl-c inside a surface arrives as a key (<code>q</code>-equivalent), not a signal. Non-TTY stdin skips raw mode entirely: keys disabled, render-only.</p>
+
+<p><b>TTY degradation.</b></p>
+
+<table>
+<tr><th>stdout</th><th>stdin</th><th>behavior</th></tr>
+<tr><td>TTY</td><td>TTY</td><td>full interactive board / watch / picker / confirm</td></tr>
+<tr><td>TTY</td><td>pipe</td><td>renders with inputs hidden, footer shows <code>(piped stdin — keys off)</code></td></tr>
+<tr><td>pipe</td><td>any</td><td>board, watch, and <code>log -f</code> render one static frame plus muted hint <code>run hub in a terminal for live view</code>, then exit 0</td></tr>
+<tr><td>pipe</td><td>any, <code>--json</code> / <code>--ndjson</code></td><td>envelope output, unaffected by TTY-ness</td></tr>
+</table>
+
+<h3 id="output-policies">Output policies</h3>
+
+<p><b>Envelope.</b> All machine output is exactly one of:</p>
+
+<pre class="code" data-lang="types">
+type OutputEnvelope =
+  | { type: &quot;snapshot&quot;; data: unknown }
+  | { type: &quot;error&quot;; error: { code: ErrorCode; message: string; detail?: unknown } }
+
+type ErrorCode =
+  | &quot;usage&quot;        // exit 1 — bad args, parse failures
+  | &quot;not_found&quot;    // exit 1 — unknown id/item
+  | &quot;ambiguous&quot;    // exit 1 — prefix matched several
+  | &quot;busy&quot;         // exit 1 — e.g. agent already running
+  | &quot;unavailable&quot;  // exit 2 — socket missing/refused, port busy, omp binary missing
+  | &quot;protocol&quot;     // exit 2 — version mismatch, malformed reply
+  | &quot;timeout&quot;      // exit 3
+</pre>
+
+<p><b>Policies per format.</b></p>
+
+<table>
+<tr><th></th><th>human (default)</th><th><code>--json</code></th><th><code>--ndjson</code></th></tr>
+<tr><td>channel</td><td>stdout; errors and hints → stderr</td><td>envelope → stdout only</td><td>envelope lines → stdout only</td></tr>
+<tr><td>ANSI</td><td>theme colors; <code>--no-color</code> / <code>NO_COLOR</code> strips</td><td>never</td><td>never</td></tr>
+<tr><td>prompts</td><td>TTY confirm (<code>kill</code>), pickers, inline inputs</td><td>never prompt</td><td>never prompt</td></tr>
+<tr><td>streaming</td><td><code>log -f</code>, live board/watch</td><td>one snapshot; <code>-f</code> rejected</td><td>one line per event; <code>log -f</code> streams forever</td></tr>
+<tr><td>alt-screen</td><td>board, watch, full log, picker</td><td>never</td><td>never</td></tr>
+</table>
+
+<ul><li><b>Decision:</b> error envelopes go to stdout, not stderr. <b>Why:</b> machines parse one channel; the exit code carries failure status, and stderr stays reserved for human-attached diagnostics in human mode. <b>Contract:</b> exactly one envelope per invocation on stdout, never mixed with human text.</li>
+<li><b>Decision:</b> interactive surfaces under machine modes degrade to static snapshots rather than erroring. <b>Why:</b> <code>hub --json</code> in a pipeline is precisely how scripts poll the board; failing would force a second code path onto every consumer. <b>Contract:</b> the snapshot shape is stable and versioned with status.json&#x27;s <code>version</code> field; unknown fields are ignored forward.</li>
+</ul>
+<h3 id="exit-codes">Exit codes</h3>
+
+<table>
+<tr><th>exit</th><th>meaning</th><th>triggers</th></tr>
+<tr><td><code>0</code></td><td>ok</td><td>success; clean quits (<code>q</code>); ctrl-c on followers; declined <code>kill</code> confirm</td></tr>
+<tr><td><code>1</code></td><td>usage</td><td>unknown command or flag, missing args, bad <code>[json]</code> parse, <code>--json</code> + <code>--ndjson</code>, unknown or ambiguous <code>&lt;id&gt;</code>/<code>&lt;item&gt;</code>, picker without TTY, <code>--tail 0</code>, <code>web --json</code>, reply error envelopes <code>not_found</code> / <code>ambiguous</code> / <code>busy</code></td></tr>
+<tr><td><code>2</code></td><td>unavailable-hub</td><td>hub.sock missing or refused, handshake/version mismatch, <code>OMP_BIN</code> binary missing, web port busy</td></tr>
+<tr><td><code>3</code></td><td>timeout</td><td>reply wait exceeded <code>replyTimeoutMs</code>; <code>tool</code> exceeded its <code>wait_seconds</code> budget</td></tr>
+</table>
+
+<ul><li><b>Decision:</b> unhandled exceptions exit 1 with the message on stderr (human) or a <code>&quot;usage&quot;</code> envelope (machine); 2 is reserved for &quot;the hub is not reachable&quot;. <b>Why:</b> unavailable-hub is a distinct operational state — scripts retry on 2 and fix their invocation on 1; collapsing them hides which one happened. <b>Contract:</b> every error path in ## Subcommands maps to exactly one row above; the ErrorCode → exit mapping in the envelope type is exhaustive.</li>
+<li><b>Signals:</b> SIGINT / SIGTERM always restore the terminal first. Followers (<code>log -f</code>, <code>web</code>, board, watch) exit 0 — stopping a viewer is not an error. One-shot commands also exit 0 with no envelope: a successful machine invocation is defined by exactly one snapshot envelope on stdout, so an absent envelope is the interruption signal for consumers. The enumerated codes remain exactly 0/1/2/3.</li>
+</ul>
+<h3 id="sketches">Sketches</h3>
+
+<p>Hue bars <code>▎</code> are two cells wide, colored per session (plain here). The cursor is <code>█</code>.</p>
+
+<p><b>1 — board with two attention items</b> (<code>hub</code>):</p>
+
+<pre class="code" data-lang="text">
+ hub · 5 sessions · 1 agent · tilt needs approval before canary 2/3
+ ⚠ NEEDS YOU ──────────────────────────────────────────────
+ ▎ approval  tilt    approve deploy canary 2/3? (yes/no)
+ ▎ › █                                        ⏎ answer · esc cancel
+ ▎ question docs    pin @yurifrl/hub to 1.4 or latest?
+ ⏳ RUNNING ───────────────────────────────────────────────
+ ▎ ● tilt      working   editing deploy/canary.sh (2m)
+ ▎ ● docs      waiting   asked a question (1m)
+ ▎ ● web-1     working   refactoring routes (14m)
+ 💤 IDLE ─────────────────────────────────────────────────
+ ▎ ○ api       idle 12m    assign: _
+ keys ↑↓ move · type to answer · d dismiss · a assign · o open · l log · q quit
+</pre>
+
+<p><b>2 — board, calm variant</b> (<code>hub</code>):</p>
+
+<pre class="code" data-lang="text">
+ hub · 5 sessions · 1 agent · all clear — nothing needs you
+ ⚠ NEEDS YOU   (empty)
+ ⏳ RUNNING ───────────────────────────────────────────────
+ ▎ ● tilt      working   watching canary metrics (3m)
+ ▎ ● web-1     working   green tests (11m)
+ 💤 IDLE       (empty)
+ keys l log · q quit
+</pre>
+
+<p><b>3 — watch split</b> (<code>hub watch</code>):</p>
+
+<pre class="code" data-lang="text">
+ hub watch · 5 sessions · no pin · filter —
+ ⚠ ───────────────────────────────────────────────────────
+ ▎ approval  tilt   approve deploy canary 2/3?   › █
+ ⏳ ───────────────────────────────────────────────────────
+ ▎ 14:02:11  tilt   ▶ Bash   bun test deploy/canary.test.ts
+ ▎ 14:02:14  tilt   ✔ exit 0 (1.2s)
+ ▎ 14:02:15  tilt   ✎ Edit   deploy/canary.sh +12 -3
+ ▎ 14:02:20  web-1  ▶ Bash   bun run build
+ ▎ 14:02:24  docs   ⚠ question raised → attention
+ keys l log-only · a attention-only · 1-9 pin · / filter · q quit
+</pre>
+
+<p><b>4 — send picker</b> (<code>hub send</code>, no id given, query <code>dep</code> typed):</p>
+
+<pre class="code" data-lang="text">
+ hub send — pick a session ▏dep
+ ▎ ▸ tilt     deploy canary 2/3              working
+ ▎   web-1    deploy routes refactor         working
+ ▎   api      deploy api rewrite             idle
+ ↑↓ move · ⏎ select · esc cancel · type to filter
+</pre>
+
+<p>After selection the message input opens on the chosen row (<code>› █</code>); ⏎ delivers.</p>
+</section>
+<section class="doc" id="doc-04-web"><div class="doc-tag"><b>Web Console</b><span>docs/04-web.md</span></div><h2 id="sec">Hub Console</h2>
+
+<p>The Hub Console is the <code>@yurifrl/hub-web</code> surface: a zero-framework Bun server that renders <code>~/.hub/</code> state as server-side HTML strings and keeps it live over <code>SSE</code> (<code>GET /stream</code>). It is an action-oriented renderer, not a log viewer — like the CLI board and the omp widget, it opens on <b>what needs you</b> and demotes the raw stream to a secondary panel. It reads <code>status.json</code> and <code>summaries.jsonl</code> through the same <code>StatusStore</code> / <code>SummaryStore</code> / <code>AttentionStore</code> ports the CLI uses, writes only through the hub&#x27;s command surface (<code>answer</code>, <code>dismiss</code>, <code>assign</code>, <code>send</code>), and never touches the single-writer file directly: the hub process remains the only writer of <code>status.json</code>. No client-side framework, no build step, no hydration — the server renders HTML strings, the browser applies <code>SSE</code> deltas to a tiny in-memory state object. A page is a renderer plugin over the same shared domain types (<code>AttentionItem</code>, <code>SessionRecord</code>, <code>Summary</code>) every other surface consumes; nothing here parses logs or re-derives attention.</p>
+
+<h3 id="routes">Routes</h3>
+
+<p>All HTML routes render from the latest in-memory snapshot (warmed from <code>status.json</code> at boot). All API routes are JSON in / JSON out and write through the command surface. <code>GET /</code> is the attention console — the web twin of bare <code>hub</code> — and is the default landing page.</p>
+
+<table>
+<tr><th>method</th><th>path</th><th>kind</th><th>what it renders / does</th></tr>
+<tr><td>GET</td><td><code>/</code></td><td>html</td><td>attention console: orientation line, attention cards, running strip, idle-assign cards, collapsed stream, summary rail</td></tr>
+<tr><td>GET</td><td><code>/session/:id</code></td><td>html</td><td>session detail: full log (via the <code>status.json</code> log LINK), phase timeline, tool bars, pinned send box; archived flavor when the session is closed</td></tr>
+<tr><td>GET</td><td><code>/agent</code></td><td>html</td><td>hub-agent surface registry; renders the page declared by the agent&#x27;s <code>agentSurface</code> id</td></tr>
+<tr><td>GET</td><td><code>/archive</code></td><td>html</td><td>index of closed sessions from <code>archive/YYYY-MM/&lt;id&gt;.json</code>, grouped by month, link to each detail</td></tr>
+<tr><td>GET</td><td><code>/archive/:id</code></td><td>html</td><td>archived session detail — same renderer as <code>/session/:id</code> with archived flavor forced</td></tr>
+<tr><td>POST</td><td><code>/api/answer</code></td><td>api</td><td><code>{itemId, text}</code> — deliver text to the session, resolve the attention item; records a <code>resolution</code> line in <code>summaries.jsonl</code></td></tr>
+<tr><td>POST</td><td><code>/api/assign</code></td><td>api</td><td><code>{sessionId, task}</code> — hand an idle session work via the command surface</td></tr>
+<tr><td>POST</td><td><code>/api/send</code></td><td>api</td><td><code>{sessionId, text}</code> — deliver a prompt to a session from the detail send box</td></tr>
+<tr><td>POST</td><td><code>/api/dismiss</code></td><td>api</td><td><code>{itemId}</code> — resolve the item without replying; also records a <code>resolution</code> line</td></tr>
+<tr><td>GET</td><td><code>/api/status</code></td><td>api</td><td>current full state (same payload shape as the <code>snapshot</code> SSE event) — debug / curl / smoke checks</td></tr>
+<tr><td>GET</td><td><code>/stream</code></td><td>sse</td><td><code>text/event-stream</code>; live deltas, Last-Event-ID aware</td></tr>
+</table>
+
+<p>Route rules:</p>
+
+<ul><li><b>Archived flavor</b> is data-driven, not a separate template: <code>/session/:id</code> looks in open sessions first, then the archive; a closed session renders with the closed badge, close date, and final summary pinned (see Session detail). <code>GET /archive/:id</code> is the explicit entry that forces the archived flavor and 404s for ids that are not archived.</li>
+<li>Unknown <code>:id</code> on <code>/session/:id</code> → 404 page listing open sessions (so a stale link still lands somewhere useful). Unknown item id on any <code>POST /api/*</code> → <code>404 {&quot;error&quot;: &quot;unknown item&quot;}</code>; malformed JSON body → <code>400 {&quot;error&quot;: ...}</code>.</li>
+<li><code>/agent</code> with no live hub agent renders the registry as empty-state (&quot;no hub agent running — start with <code>hub agent</code>&quot;), not an error.</li>
+<li>POSTing to a closed/archived session (<code>/api/send</code> with an archived <code>sessionId</code>) → <code>409 {&quot;error&quot;: &quot;session closed&quot;}</code>; the CLI surfaces the same refusal.</li>
+</ul>
+<h3 id="sse-contract">SSE contract</h3>
+
+<p>One endpoint, <code>GET /stream</code>, <code>text/event-stream</code>, one logical channel. Events carry <code>id:</code> fields so the client can reconnect; payloads are JSON. The server emits in hub-phase order — when something changes, the smallest event that describes the change goes out; a <code>snapshot</code> is always sufficient state on its own.</p>
+
+<table>
+<tr><th>event</th><th>payload</th><th>when</th></tr>
+<tr><td><code>snapshot</code></td><td><code>{v, digest, attention: AttentionItem[], sessions: SessionDigest[]}</code> — full attention + sessions state, same shape <code>GET /api/status</code> returns</td><td>on connect (first event), after reconnect, and after any server-side state that cannot be expressed as a delta (agent restart, archive sweep, version bump)</td></tr>
+<tr><td><code>attention</code></td><td>`{op: &quot;raised&quot;\</td><td>&quot;resolved&quot;, item: AttentionItem}` — raised/resolved deltas for one item</td><td>hub agent raises or an answer/dismiss resolves an item</td></tr>
+<tr><td><code>log</code></td><td><code>{sessionId, hue, entry: {t, kind, text}}</code> — one log line, <code>hue</code> precomputed server-side from the session hash so the client never hashes</td><td>every reporter line (session_start / user_message / assistant_message / tool_call / agent_end) for every open session, always — collapsed-stream clients still buffer them (see Client state)</td></tr>
+<tr><td><code>summary</code></td><td><code>{t, sessionId, kind, text, by}</code> — one <code>summaries.jsonl</code> line</td><td>hub agent writes a summary or resolution</td></tr>
+<tr><td><code>phase</code></td><td><code>{sessionId, phase, at}</code> — session moved between `working \</td><td>waiting \</td><td>idle \</td><td>blocked`</td><td>reporter phase transition or agent digest update</td></tr>
+</table>
+
+<p>Reconnect semantics:</p>
+
+<ul><li><code>EventSource</code> reconnects automatically with <code>Last-Event-ID</code>. The server keeps a small ring of recent event ids (per connection it tracks the last emitted id); on reattach with a <code>Last-Event-ID</code> it replays what the ring still holds and then sends a fresh <code>snapshot</code> — the client treats any snapshot as authoritative and replaces state wholesale, so replayed deltas are idempotent (deltas are keyed by item id / session id, so re-applying is safe).</li>
+<li>Missed-beyond-ring reattach degrades to just the snapshot refresh; that is the designed behavior — the snapshot is the contract, deltas are an optimization.</li>
+<li>The <code>snapshot</code> payload is the single full-state shape; <code>GET /api/status</code> returns exactly it. One shape, two transports.</li>
+<li>Web-package extension: <code>/agent</code> pages may also emit a <code>surface</code> delta (<code>{name, json}</code>) when a watched <code>~/.hub/agents/&lt;name&gt;/surface.json</code> changes (see Agent page). The five events above are the core contract every client must handle; <code>surface</code> is consumed only by custom agent pages.</li>
+</ul>
+<h3 id="main-page">Main page</h3>
+
+<p><code>GET /</code> renders top-down in this exact order — same hierarchy as the CLI board and omp widget:</p>
+
+<p>1. <b>Orientation line</b> — one agent-written sentence under the header: what needs you first (&quot;tilt needs approval · deploy canary 2/3 · docs idle 12m&quot;). Sourced from the hub-agent <code>digest</code> field in <code>status.json</code>; when the agent is off, the server synthesizes counts (&quot;2 need you · 3 running · 1 idle&quot;). Updated via <code>phase</code> deltas carrying the new digest, or a fresh <code>snapshot</code>.</p>
+<p>2. <b>Attention cards</b> (amber-bordered, <code>warn</code> token) — one per <code>AttentionItem</code>, kind-tagged (<code>approval</code> / <code>question</code> / <code>blocked</code> / <code>idle</code>). Each card: kind chip, session hue bar + session id, item text, and three verbs as first-class inline controls — the answer input lives <b>on the card</b> (type + Enter → <code>POST /api/answer</code>, delivers to the session and resolves), dismiss <code>✕</code> (→ <code>POST /api/dismiss</code>), open <code>→</code> (link to <code>/session/:id</code>). All four kinds use the same three verbs — answering a kind-<code>idle</code> item nudges its session; assigning idle <i>sessions</i> is the separate idle-assign section below.</p>
+<p>3. <b>Running strip</b> — one digest line per active session (<code>working</code> / <code>waiting</code> / <code>blocked</code>): hue bar, phase word, agent-written description. Not the log — a digest. Each line links to <code>/session/:id</code>. A <code>waiting</code> line carries its attention count.</p>
+<p>4. <b>Idle-assign cards</b> — one per <code>idle</code> session: hue bar, id, idle-for duration, and an &quot;assign work&quot; input right on the card (Enter → <code>POST /api/assign</code>).</p>
+<p>5. <b>Collapsed stream</b> — a chip (<code>▸ stream (n)</code>); toggling expands the full hue-tagged live log (the <code>log</code> events, newest at bottom). Collapsed by default; the stream never disappears, it just stopped being the headline. Toggling sends no request — the client keeps receiving <code>log</code> events and shows/hides the panel.</p>
+<p>6. <b>Summary rail</b> — right column, latest <code>summary</code> lines from <code>summaries.jsonl</code> (per-session tinted), newest first, each linking to <code>/session/:id</code>. <code>resolution</code> lines render inline with the answer text.</p>
+
+<p>Keyboard: <code>a</code> focus next attention card input, <code>s</code> toggle stream, <code>/</code> focus filter, <code>Enter</code> submits the focused input, <code>Esc</code> blurs. Filter hides non-matching cards and strip lines (client-side only).</p>
+
+<h3 id="session-detail">Session detail</h3>
+
+<p><code>GET /session/:id</code> — the full-record view; the raw log lives here, demoted from the main page but first-class quality.</p>
+
+<ul><li><b>Full log via the LINK, not embedded</b>: the session record in <code>status.json</code> carries <code>log: &quot;logs/&lt;id&gt;.jsonl&quot;</code> — a link, never content. The server reads that file through the store adapter per request (bounded tail + <code>?since=</code> cursor param for live tailing) and renders hue-tagged entries. The web server never inlines log bytes into <code>status.json</code> reads.</li>
+<li><b>Phase timeline</b>: horizontal rail of the session&#x27;s phase history from the record&#x27;s bounded <code>phaseHistory</code> (<code>{phase, at}[]</code>, newest right, cap 50). Absent field → timeline shows the current phase only. <code>blocked</code> and <code>waiting</code> segments render in <code>warn</code>/<code>err</code>, <code>working</code> in <code>ok</code>.</li>
+<li><b>Tool bars</b>: one compact row per <code>tool_call</code> log entry — tool name, arg digest, duration, ok/err dot. Collapsed by default per tool kind; click expands the result.</li>
+<li><b>Pinned send box</b>: bottom-pinned input, always visible; Enter → <code>POST /api/send {sessionId, text}</code>; delivery state (queued → delivered) shown inline from the response.</li>
+<li><b>Archived flavor</b> (closed session): closed badge, <code>closedAt</code> date, <code>closedBy</code>, and the final summary pinned above the log; the send box is replaced by a &quot;closed — read-only&quot; note, answer/assign controls absent. Same renderer, data-driven flavor.</li>
+</ul>
+<h3 id="agent-page">Agent page</h3>
+
+<p><code>GET /agent</code> renders the hub agent&#x27;s declared custom surface — the agent owns its interface.</p>
+
+<ul><li><b>Surface registry</b>: a static map in the web package from <code>agentSurface</code> id → renderer function. Surfaces register per id; the page looks up the agent record&#x27;s <code>agentSurface</code> and hands the panel the record&#x27;s fields. This is the DRY web-side expression of the surfaces contract: one registry, renderers are pure functions from agent state to HTML.</li>
+<li><b>Default <code>watcher</code> surface</b>: a compact panel — digest line, attention counts (<code>⚠ n ⏳ n 💤 n</code>), last summary, cadence heartbeat. It mirrors what the CLI <code>hub agent --surface watcher</code> shows, rendered in HTML.</li>
+<li><b>Demo <code>pending</code> surface</b>: renders <code>~/.hub/agents/&lt;name&gt;/surface.json</code> as a self-updating panel. The server watches that file (mtime poll) and pushes a <code>surface</code>-namespaced delta over the same <code>/stream</code> connection when it changes; the client re-renders the panel from the JSON payload. No client polling, no reload.</li>
+<li><b>Unknown <code>agentSurface</code> id</b> → generic card: agent name, kind, digest, link to its session detail. Never a 404 — the registry degrades, it does not fail.</li>
+<li>The hub agent is optional (default off). With no agent, <code>/agent</code> renders the empty-state described under Routes and the main page hides attention/summary rails (fallback stream-only mode).</li>
+</ul>
+<h3 id="server">Server</h3>
+
+<p><code>@yurifrl/hub-web</code> exports one entry, <code>startHubWeb</code> — the composition root injects stores, bus, and command surface; the package holds no file I/O of its own beyond reading the log/surface files through injected ports. Port shape (type sketch, no imports):</p>
+
+<pre class="code" data-lang="ts">
+type HubWebDeps = {
+  port?: number;                 // default 7749 (final default owned by 03-cli), binds 127.0.0.1 only
+  stores: {
+    status: StatusStore;         // read status.json + sessions map
+    summaries: SummaryStore;     // tail summaries.jsonl
+    attention: AttentionStore;   // read/answer/dismiss attention items
+  };
+  bus: EventBus;                 // hub event bus; web subscribes, never publishes state
+  commands: CommandSurface;      // answer / dismiss / assign / send — all writes go through here
+  logs?: {                     // shape the web package needs; satisfied by injecting
+    tail(id, since?): Entry[]; // the lib jsonl_store adapter — reads logs/&lt;id&gt;.jsonl
+  };                           // via the status.json log LINK. Not a new lib port.
+  theme?: ThemeTokens;           // defaults to lib/theme.ts
+};
+type startHubWeb = (deps: HubWebDeps) =&gt; Promise&lt;{ stop(): Promise&lt;void&gt;; port: number }&gt;;
+</pre>
+
+<ul><li><b>Bind address</b>: <code>127.0.0.1</code> default, non-configurable in v1. The console is a window onto your local agents&#x27; session content and can answer on your behalf — it must not be reachable from the network by default.</li>
+<li><b>Security tradeoff (v1 = local-only, no auth)</b>: we deliberately ship no token/session auth. Why: the hub is a single-user, same-machine tool; the socket and the web server already assume a trusted local user, and auth would add a secret-management surface (where does the token live, how does the browser get it) that outweighs the threat for v1. The tradeoff we accept: <b>any local process or user on the machine can read every session&#x27;s log content and post answers as you</b>. That is exactly the trust boundary <code>hub.sock</code> already assumes (same-user unix socket), so the web surface adds no new exposure — it just makes the same assumption explicit. Mitigation that ships anyway: bind to loopback only, no CORS headers on API routes (browsers block cross-origin POSTs with JSON bodies; no <code>Access-Control-Allow-Origin</code> is emitted), <code>Content-Type: application/json</code> enforced on API responses. Future: token auth (env-provided token, required as query param on <code>/stream</code> and header on API routes) behind an explicit opt-in flag — designed but not built in v1.</li>
+<li><b>Rendering</b>: server-side HTML template strings, hand-rolled, one function per page (match-day web style: small named functions, no framework, no client bundle). CSS custom properties are generated from <code>lib/theme.ts</code> tokens (<code>--accent: #70e1c4; --ok: #3fd68f; --warn: #f5c04e; --err: #ff7a9a; --muted: #8b97b0;</code> plus per-session hue variables <code>--hue-&lt;sessionId&gt;</code>); the theme is defined once in lib and injected here — the web package never hardcodes a hex value.</li>
+<li><b>Static assets</b>: one small inline <code>&lt;style&gt;</code> and <code>&lt;script&gt;</code> per page (no separate files, no build step); CSP <code>default-src &#x27;none&#x27;; style-src &#x27;unsafe-inline&#x27;; script-src &#x27;unsafe-inline&#x27;; connect-src &#x27;self&#x27;</code> — inline is deliberate, the pages are served from one origin and the alternative is a build step.</li>
+<li><b>Lifecycle</b>: <code>startHubWeb</code> subscribes to the bus on start, unsubscribes and closes all SSE connections on <code>stop()</code>. <code>hub web [--port N]</code> is the CLI wrapper around it.</li>
+</ul>
+<h3 id="client-state">Client state</h3>
+
+<p>The client is a dumb cache with one invariant: <b>the snapshot is authoritative; deltas are idempotent</b>.</p>
+
+<ul><li>On load: fetch <code>/api/status</code> → hold as <code>state</code> → open <code>/stream</code> → apply deltas.</li>
+<li><code>snapshot</code> replaces state wholesale. <code>attention</code> deltas upsert/remove by item id (<code>op: &quot;raised&quot;</code> → upsert; <code>op: &quot;resolved&quot;</code> → remove + mark resolved in the summary rail). <code>log</code> appends to that session&#x27;s stream buffer (bounded ring, oldest dropped). <code>summary</code> prepends to the rail. <code>phase</code> updates the session&#x27;s phase + description.</li>
+<li>On reconnect (<code>EventSource</code> fires <code>error</code> then re-opens with <code>Last-Event-ID</code>): server responds with replay + fresh <code>snapshot</code>; the client replaces state on snapshot. Because deltas are keyed by id, a replayed delta after a newer snapshot is a no-op unless it carries a newer <code>t</code>.</li>
+<li>No client-side derived state beyond the filter query and scroll position; every render is a pure function of <code>state</code>. Rerender on each delta is fine at hub scale (tens of sessions); if the stream panel gets hot, only it re-renders.</li>
+</ul>
+<h3 id="wireframes">Wireframes</h3>
+
+<p>Attention console (<code>GET /</code>, stream collapsed):</p>
+
+<pre class="code" data-lang="">
+┌──────────────────────────────────────────────────────────────────────────┐
+│ hub console                    ○ agent on        [archive] [agent]       │
+│ ⚠ tilt needs approval · deploy canary 2/3 · docs idle 12m                │  ← orientation (digest)
+├──────────────────────────────────────────────────────────┬───────────────┤
+│ NEEDS YOU (2)                                            │ SUMMARY RAIL  │
+│ ┌──────────────────────────────────────────────────────┐ │               │
+│ │ ⚠ approval · tilt                    ▍(hue)  ✕  →    │ │ ▍tilt         │
+│ │ rate limit hit on POST /deploy — approve retry?      │ │  needs approv │
+│ │ [ approve with note ______________ ] ⏎ answers       │ │  · 2m ago     │
+│ └──────────────────────────────────────────────────────┘ │ ▍canary       │
+│ ┌──────────────────────────────────────────────────────┐ │  deploy 2/3   │
+│ │ ? question · docs                    ▍(hue)  ✕  →    │ │  rolling ok   │
+│ │ which registry for the new image?                    │ │               │
+│ │ [ answer _________________________ ]                 │ │               │
+│ └──────────────────────────────────────────────────────┘ │               │
+│ RUNNING                                                  │               │
+│ ▍tilt       working  editing deploy.ts               →   │               │
+│ ▍canary     waiting  1 attention · rate limit         →  │               │
+│ IDLE — assign work                                       │               │
+│ ▍docs       idle 12m   [ assign: ______________ ]        │               │
+│ [▸ stream (47)]                                          │               │
+└──────────────────────────────────────────────────────────┴───────────────┘
+  keys: a next attention · s stream · / filter
+</pre>
+
+<p>Session detail (<code>GET /session/:id</code>, open flavor):</p>
+
+<pre class="code" data-lang="">
+┌──────────────────────────────────────────────────────────────────────────┐
+│ ▍tilt · working · started 14:02 · omp --mode acp          [← console]    │
+│ phase:  working ─ working ─ waiting ─ working            (timeline)      │
+│           14:02      14:07      14:09      14:12                         │
+├──────────────────────────────────────────────────────────────────────────┤
+│ LOG (logs/tilt.jsonl — linked, not embedded)                             │
+│ ▍14:02 ▶ session_start  attached=true                                    │
+│ ▍14:03 ▸ user_message   &quot;deploy canary to staging&quot;                       │
+│ ▍14:03 ● assistant      reading deploy config…                           │
+│ ▍14:04 ⚙ tool: Bash     gh api …                              ok   0.8s │
+│ ▍14:05 ⚙ tool: Bash     gh api …                              err  0.4s │
+│ ▍14:07 ⚠ raised approval: rate limit on POST /deploy                    │
+│  …                                                            tail -f ▾ │
+├──────────────────────────────────────────────────────────────────────────┤
+│ TOOL BARS   Bash ×4 (2 ok · 1 err · 1 running)   Read ×11 (ok)    [▾]    │
+├──────────────────────────────────────────────────────────────────────────┤
+│ [ send: ______________________________ ] ⏎  (pinned, always visible)     │
+└──────────────────────────────────────────────────────────────────────────┘
+</pre>
+
+<p>Session detail — archived flavor (closed):</p>
+
+<pre class="code" data-lang="">
+┌──────────────────────────────────────────────────────────────────────────┐
+│ ▍tilt · ARCHIVED · closed 2026-08-29 18:44 by hub-cli     [← archive]    │
+│ final summary: deployed canary 3/3, clean; rate limit resolved by Y.     │
+├──────────────────────────────────────────────────────────────────────────┤
+│ LOG (read-only)                                                          │
+│ ▍14:02 ▶ session_start …                                                 │
+│ ▍18:44 ■ closed (hub_archive)                                            │
+├──────────────────────────────────────────────────────────────────────────┤
+│ closed — read-only (no send box)                                         │
+└──────────────────────────────────────────────────────────────────────────┘
+</pre>
+
+<p>Agent page (<code>GET /agent</code>, demo <code>pending</code> surface):</p>
+
+<pre class="code" data-lang="">
+┌──────────────────────────────────────────────────────────────────────────┐
+│ hub agent · surface: pending (demo)              [← console]             │
+├──────────────────────────────────────────────────────────────────────────┤
+│ ~/.hub/agents/&lt;name&gt;/surface.json              (self-updating over /stream)│
+│ ┌──────────────────────────────────────────────────────────────────────┐ │
+│ │ pending review: 3 diffs                                              │ │
+│ │  ▍ tilt      +120 −4   api/deploy.ts        [review] [skip]          │ │
+│ │  ▍ canary    +18  −0   lib/theme.ts         [review] [skip]          │ │
+│ │  ▍ docs      +2  −22   docs/old.md          [review] [skip]          │ │
+│ └──────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────┘
+</pre>
+
+<p>Unknown <code>agentSurface</code> id → generic card:</p>
+
+<pre class="code" data-lang="">
+┌──────────────────────────────────────────────────────────────────────────┐
+│ hub agent · surface: my-custom (unknown)         [← console]             │
+│ ▍ digest: watching 3 threads · 1 needs you                               │
+│ → open session                                                           │
+└──────────────────────────────────────────────────────────────────────────┘
+</pre>
+</section>
+<section class="doc" id="doc-05-omp-plugin"><div class="doc-tag"><b>omp Plugin</b><span>docs/05-omp-plugin.md</span></div><h2 id="sec">omp plugin</h2>
+
+<p><code>extensions/hub.ts</code> in <code>@yurifrl/pi-hub</code> — the omp extension that turns any session into the hub and wires every other session to it, as a thin driving adapter over <code>@yurifrl/hub</code>.</p>
+
+<p>The plugin owns no policy. Persistence, attention, summaries, and routing live in lib behind ports (<code>StatusStore</code>, <code>SummaryStore</code>, <code>AttentionStore</code>, <code>EventBus</code>, <code>AgentRuntime</code>, <code>Clock</code>); the extension only translates pi events into hub frames and hub replies into tool results, and renders the widget. The lib composition root (see 01-architecture) is injected with adapters (<code>json_store</code>, <code>jsonl_store</code>, <code>omp_agent</code>, <code>unix_socket</code>, <code>sse_bus</code>) when the hub starts. Key decisions are recorded as <code>DECISION / WHY / CONTRACT</code> blocks, match-day style.</p>
+
+<h3 id="entry">Entry</h3>
+
+<p>One default export; all state lives inside the factory closure:</p>
+
+<pre class="code" data-lang="ts">
+// extensions/hub.ts — @yurifrl/pi-hub entry
+export default function hub(pi: ExtensionAPI): void
+</pre>
+
+<p>DECISION — brain early-return.</p>
+<p>WHY: hub-spawned RPC children — the <code>omp --mode rpc</code> brain and workers — load the same extension and get <code>OMP_HUB_BRAIN=1</code>. Without a guard every child would try to serve the socket or report to itself, forking the hub forever. (The hub agent does NOT get this flag; it loads the extension fully and is bounded instead by guards 5–6 in ## Anti-recursion.)</p>
+<p>CONTRACT: when <code>process.env.OMP_HUB_BRAIN === &quot;1&quot;</code>, the factory returns before any <code>pi.on</code>, <code>pi.registerTool</code>, or <code>pi.registerCommand</code>. The child contributes nothing but RPC answers. This is the first and hardest anti-recursion guard (## Anti-recursion).</p>
+
+<p>Commands, registered only after the guard:</p>
+
+<table>
+<tr><th>command</th><th>behavior</th></tr>
+<tr><td><code>/hub-start</code></td><td>make this session the hub (steps below)</td></tr>
+<tr><td><code>/hub-stop</code></td><td>stop serving; keep the session running (## Shutdown)</td></tr>
+<tr><td><code>/hub-agent</code></td><td>spawn or adopt the hub agent (## Agent spawn)</td></tr>
+</table>
+
+<p><code>/hub-start</code>, in order:</p>
+
+<p>1. <code>setWidget(&quot;omp-hub-stream&quot;, ...)</code> — claims the widget slot. The key <code>omp-hub-stream</code> is the contract with omp&#x27;s UI: stable across renders, cleared on <code>/hub-stop</code>.</p>
+<p>2. Compose the core: <code>json_store</code> → <code>StatusStore</code> (<code>~/.hub/status.json</code>), <code>jsonl_store</code> → logs + <code>SummaryStore</code> (<code>summaries.jsonl</code>), <code>sse_bus</code> → <code>EventBus</code>, <code>AttentionStore</code> over the <code>StatusStore</code>. Inject into the lib composition root.</p>
+<p>3. Spawn the brain through the <code>AgentRuntime</code> port (<code>omp_agent</code> adapter): <code>OMP_BIN</code> <code>--mode rpc</code>, env <code>OMP_HUB_BRAIN=1</code>, plus <code>OMP_HUB_MODEL</code> when set. Readiness = version handshake on the RPC channel.</p>
+<p>4. Serve <code>~/.hub/hub.sock</code> through the <code>unix_socket</code> adapter: newline-delimited JSON frames; reporter events in, cmd/reply out. A stale socket file from a crashed hub is unlinked before listen.</p>
+<p>5. Register self in <code>status.json</code> (session record with meta flag <code>kind:&quot;hub&quot;</code>) and render the widget.</p>
+
+<p>DECISION — one well-known socket address.</p>
+<p>WHY: reporter, <code>hub</code> CLI, and Hub Console must find the hub without config.</p>
+<p>CONTRACT: the path is <code>~/.hub/hub.sock</code>, overridable by <code>OMP_HUB_SOCK</code>; every surface resolves it the same way. The omp-era <code>~/.omp/hub.sock</code> is dead.</p>
+
+<h3 id="reporter">Reporter</h3>
+
+<p>Runs in EVERY session — including the hub session, via a local self-feed instead of the socket. One reporter instance per process; every handler follows the error rules (## Tools › Error rules).</p>
+
+<p>Event translation table:</p>
+
+<table>
+<tr><th>pi event</th><th>frame</th><th>notes</th></tr>
+<tr><td><code>session_start</code></td><td><code>session_start</code> <code>attached:false</code></td><td>carries <code>sessionId</code>, <code>title</code>, <code>cwd</code></td></tr>
+<tr><td><code>input</code></td><td><code>user_message</code></td><td>typed text; commands (leading <code>/</code>) are skipped — they are UI, not conversation</td></tr>
+<tr><td><code>message_end</code> (role <code>assistant</code>)</td><td><code>assistant_message</code></td><td>text + model</td></tr>
+<tr><td><code>message_end</code> (role <code>user</code>)</td><td><code>user_message</code></td><td>fallback capture: delivered/enqueued prompts that never pass through <code>input</code>; <code>&lt;</code>-prefixed wrapper blocks skipped</td></tr>
+<tr><td><code>tool_execution_start</code></td><td><code>tool_call</code></td><td>tool name + JSON-stringified args (best effort; unserializable args become <code>&quot;&quot;</code>)</td></tr>
+<tr><td><code>agent_end</code></td><td><code>agent_end</code></td><td>flips the session&#x27;s phase in hub state (working → idle/waiting)</td></tr>
+<tr><td><code>session_shutdown</code></td><td><code>session_end</code></td><td>best-effort frame; hub closes that one session properly (## Shutdown)</td></tr>
+</table>
+
+<p>DECISION — two capture paths for user input.</p>
+<p>WHY: typed input fires <code>input</code>; messages delivered by the hub or queued by the harness arrive only as user-role <code>message_end</code>. Capturing both is the difference between a roster and a log.</p>
+<p>CONTRACT: <code>input</code> is authoritative when present; <code>message_end</code> user-role frames are the fallback and skip <code>&lt;...&gt;</code>-wrapped system payloads so skill injections never pollute the log.</p>
+
+<p>Self-feed: when <code>hubActive &amp;&amp; sessionId === selfSessionId</code>, frames bypass the socket and go straight into the hub&#x27;s event handler. The hub watches itself exactly like a peer, minus the round-trip (and minus recursion risk — ## Anti-recursion).</p>
+
+<p>Attach-on-connect. The reporter owns one reconnecting socket with a bounded outbox (last 500 frames, dropped wholesale above 50 on close). On EVERY successful connect it first enqueues:</p>
+
+<pre class="code" data-lang="text">
+{&quot;kind&quot;:&quot;session_start&quot;,&quot;v&quot;:1,&quot;attached&quot;:true,&quot;sessionId&quot;:&quot;a3f2&quot;,&quot;title&quot;:&quot;tilt&quot;,&quot;cwd&quot;:&quot;~/work/api&quot;}
+</pre>
+
+<p>DECISION — attach is a frame, not a handshake endpoint.</p>
+<p>WHY: sessions outlive hubs. A session started before the hub — or surviving a hub restart — must appear on the roster with no user action.</p>
+<p>CONTRACT: <code>attached:true</code> means &quot;pickup of an existing session&quot;; the hub upserts by <code>sessionId</code>, so reconnects and hub restarts are idempotent — no duplicate rows, no duplicate attention. <code>attached:false</code> appears only in the original <code>session_start</code> emission. All frames carry <code>v:1</code>; a hub that cannot honor the major version replies once with <code>ok:false</code> (&quot;version mismatch&quot;) instead of silently dropping frames.</p>
+
+<p>Inbound frames handled by the reporter, exactly two:</p>
+
+<ul><li><code>deliver</code> → <code>sendUserMessage(text)</code> — the only inbound mutation of the host session.</li>
+<li><code>reply</code> → resolves the matching pending cmd by <code>cmdId</code>.</li>
+</ul>
+<p>Outbound cmds (<code>reporterCmd(op, payload, timeoutMs)</code>): stamp <code>cmdId</code>, enqueue <code>{kind:&quot;cmd&quot;, cmdId, op, ...payload}</code>, resolve on reply <code>{cmdId, ok, text}</code>. On timeout: resolve <code>{ok:false, text:&quot;hub command timed out — is the hub running /hub-start?&quot;}</code>. Never throws.</p>
+
+<h3 id="tools">Tools</h3>
+
+<p>All nine tools are registered in every non-brain session via <code>pi.registerTool({ name, label, description, parameters, execute })</code> with <code>z = pi.zod</code>. One dispatch rule for every tool:</p>
+
+<ul><li><b>hub-local</b> — when <code>hubActive &amp;&amp; sessionId === selfSessionId</code>: call the lib command surface directly. Workers go through <code>AgentRuntime</code> handles; sessions through <code>resolveTarget</code> (session-id prefix or title substring) + deliver.</li>
+<li><b>peer relay</b> — everyone else: cmd frame over <code>hub.sock</code>, await the correlated reply.</li>
+</ul>
+<pre class="code" data-lang="text">
+→ {&quot;kind&quot;:&quot;cmd&quot;,&quot;v&quot;:1,&quot;cmdId&quot;:&quot;c7&quot;,&quot;op&quot;:&quot;send&quot;,&quot;target&quot;:&quot;tilt&quot;,&quot;text&quot;:&quot;…&quot;,&quot;waitMs&quot;:0}
+← {&quot;kind&quot;:&quot;reply&quot;,&quot;cmdId&quot;:&quot;c7&quot;,&quot;ok&quot;:true,&quot;text&quot;:&quot;delivered; no reply requested&quot;}
+</pre>
+
+<p>Timeouts are per-tool (stated inline in each tool&#x27;s Routing line). Every timeout resolves <code>{ok:false}</code> with the timeout text — tools never throw. Ops: <code>list</code>, <code>send</code>, <code>tool</code>, <code>spawn</code>, <code>kill</code>, <code>archive</code>, <code>attention</code>, <code>answer</code>, <code>assign</code>.</p>
+
+<h4>hub_list_sessions</h4>
+
+<p>Description (registered): &quot;List all live OMP sessions on the hub plus its RPC workers. Requires the hub to be active (/hub-start in the hub terminal).&quot;</p>
+
+<pre class="code" data-lang="ts">
+// parameters: z.object({}) — no arguments
+{}
+</pre>
+
+<p>Routing: hub-local → render the <code>StatusStore</code> snapshot (roster: id, title, phase, description, lastActivity, kind). Peer relay → op <code>list</code>. Timeout 10s.</p>
+
+<h4>hub_send_message</h4>
+
+<p>Description: &quot;Send a message into another live OMP session via the hub. The target&#x27;s agent receives it as a user message. Set wait_seconds to also return its reply.&quot;</p>
+
+<pre class="code" data-lang="ts">
+{
+  target:       z.string().describe(&quot;worker name, session id prefix, or title substring&quot;),
+  message:      z.string().describe(&quot;text delivered into the target session as a user message&quot;),
+  wait_seconds: z.number().int().min(0).max(600).optional().describe(&quot;also wait for the target&#x27;s reply; default 0&quot;),
+}
+</pre>
+
+<p>Routing: hub-local → worker? <code>AgentRuntime</code> promptAndWait (always awaits completion, bounded by <code>max(waitMs, 240s)</code>) : <code>resolveTarget</code> → deliver into the session, optionally await its reply. Peer relay → op <code>send</code> <code>{target, text, waitMs}</code>. Timeout <code>max(wait_seconds*1000 + 15s, 30s)</code>.</p>
+
+<h4>hub_call_tool</h4>
+
+<p>Description: &quot;Make another OMP session (or RPC worker) call a tool and report the result. For workers this is a direct round-trip returning the actual result.&quot;</p>
+
+<pre class="code" data-lang="ts">
+{
+  target:       z.string().describe(&quot;worker name, session id prefix, or title substring&quot;),
+  tool:         z.string().describe(&quot;tool name, e.g. bash, read, write&quot;),
+  args:         z.string().optional().describe(&#x27;tool arguments as JSON, e.g. {&quot;command&quot;:&quot;ls&quot;}&#x27;),
+  wait_seconds: z.number().int().min(0).max(600).optional().describe(&quot;seconds to wait for the result; default 240&quot;),
+}
+</pre>
+
+<p>Routing: hub-local → worker? direct RPC tool round-trip (the real tool result comes back) : session? deliver the directive <code>[hub-command] Call the tool \</code>X\<code> with arguments Y now. Then reply with a terse summary of the tool result.</code> and await the reply. Peer relay → op <code>tool</code> <code>{target, tool, args, waitMs}</code>. Timeout <code>wait_seconds*1000 + 30s</code>.</p>
+
+<h4>hub_spawn_worker</h4>
+
+<p>Description: &quot;Spawn a fresh headless OMP session (omp --mode rpc) managed by the hub. Drive it with hub_send_message / hub_call_tool.&quot;</p>
+
+<pre class="code" data-lang="ts">
+{
+  name:  z.string().optional().describe(&quot;worker name (default worker-N)&quot;),
+  model: z.string().optional().describe(&quot;model spec for the worker&quot;),
+}
+</pre>
+
+<p>Routing: hub-local → <code>AgentRuntime.spawn</code> via the <code>omp_agent</code> adapter (<code>OMP_BIN --mode rpc</code>, env <code>OMP_HUB_BRAIN=1</code>, <code>OMP_HUB_MODEL</code> fallback), register in <code>status.json</code> as <code>kind:&quot;worker&quot;</code>. Peer relay → op <code>spawn</code>. Timeout 60s. Duplicate names are rejected <code>{ok:false}</code>.</p>
+
+<h4>hub_kill_worker</h4>
+
+<p>Description: &quot;Dispose an RPC worker spawned by hub_spawn_worker. Kills the process and writes the archive record.&quot;</p>
+
+<pre class="code" data-lang="ts">
+{
+  name: z.string().describe(&quot;worker name&quot;),
+}
+</pre>
+
+<p>Routing: hub-local → <code>AgentRuntime.dispose</code> (SIGTERM, then kill), remove from <code>status.json</code>, write <code>archive/YYYY-MM/&lt;name&gt;.json</code> (<code>closedAt</code>, <code>closedBy:&quot;hub_kill&quot;</code>, final summary from the last summary/assistant line). Peer relay → op <code>kill</code>. Timeout 15s.</p>
+
+<h4>hub_archive</h4>
+
+<p>Description: &quot;Properly close a live session: flush state, write the archive record (closedAt, closedBy, finalSummary) and remove it from status.json.&quot;</p>
+
+<pre class="code" data-lang="ts">
+{
+  id: z.string().describe(&quot;session id prefix or title substring&quot;),
+}
+</pre>
+
+<p>Routing: hub-local → <code>resolveTarget</code> → close: remove from <code>sessions</code>, write <code>archive/YYYY-MM/&lt;id&gt;.json</code> with the full record plus <code>closedAt</code>, <code>closedBy:&quot;hub_archive&quot;</code>, <code>finalSummary</code> (last <code>summaries.jsonl</code> line for the session, else last <code>assistant_message</code>). Peer relay → op <code>archive</code>. Timeout 15s. This is the only way a still-running peer session leaves the roster voluntarily.</p>
+
+<h4>hub_attention</h4>
+
+<p>Description: &quot;List the hub&#x27;s open attention items (approval, question, blocked, idle) with ids, sessions, and text. Empty result means nothing needs you.&quot;</p>
+
+<pre class="code" data-lang="ts">
+// parameters: z.object({}) — no arguments
+{}
+</pre>
+
+<p>Routing: hub-local → <code>AttentionStore.open()</code> — <code>AttentionItem[]</code> sorted by <code>createdAt</code>, each <code>{ id, sessionId, kind: approval|question|blocked|idle, text, createdAt }</code>. Peer relay → op <code>attention</code>. Timeout 10s.</p>
+
+<h4>hub_answer</h4>
+
+<p>Description: &quot;Answer an attention item: deliver the text to its session, resolve the item, and record the resolution.&quot;</p>
+
+<pre class="code" data-lang="ts">
+{
+  id:   z.string().describe(&quot;attention item id&quot;),
+  text: z.string().describe(&quot;answer delivered to the session&quot;),
+}
+</pre>
+
+<p>Routing: hub-local → deliver <code>text</code> to the item&#x27;s session, then <code>AttentionStore.resolve(id, { answer })</code> and a <code>kind:&quot;resolution&quot;</code> line in <code>summaries.jsonl</code> (<code>{t, sessionId, kind, text, by}</code>). Peer relay → op <code>answer</code>. Timeout 15s. Unknown id → <code>{ok:false}</code>.</p>
+
+<h4>hub_assign</h4>
+
+<p>Description: &quot;Give an idle session work: deliver the task text as a user message and mark the session working.&quot;</p>
+
+<pre class="code" data-lang="ts">
+{
+  id:   z.string().describe(&quot;session id prefix or title substring&quot;),
+  task: z.string().describe(&quot;task text delivered to the session&quot;),
+}
+</pre>
+
+<p>Routing: hub-local → <code>resolveTarget</code> → deliver <code>task</code>, flip phase to <code>working</code>, append a <code>task_assigned</code> line to <code>logs/&lt;id&gt;.jsonl</code> via the <code>EventBus</code>. Peer relay → op <code>assign</code>. Timeout 15s.</p>
+
+<h4>Error rules</h4>
+
+<ul><li>Every <code>deliver</code> / <code>sendUserMessage</code> call is wrapped in try/catch. A dead target or a hub fault is surfaced in the tool result (<code>{ok:false, text}</code>) — it NEVER throws into the host session. A reporting session must survive hub death, and the hub session must survive a dead peer.</li>
+<li>Tool timeouts resolve <code>{ok:false}</code> with the timeout text (## Reporter); they never reject.</li>
+<li>Inbound frames are parsed defensively: malformed JSON and unknown kinds are dropped silently.</li>
+<li>The reporter never writes hub files. Single-writer rule: only the hub process touches <code>status.json</code>, logs, and <code>summaries.jsonl</code>; CLI, web, and reporters read.</li>
+</ul>
+<h3 id="widget">Widget</h3>
+
+<p>Hub-mode only, driven through <code>setWidget(&quot;omp-hub-stream&quot;, lines)</code>.</p>
+
+<p>DECISION — the widget renders the attention contract, not the raw stream.</p>
+<p>WHY: the hub is action-oriented; the log stream already has dedicated surfaces (<code>hub log -f</code>, <code>hub watch</code>, the Console).</p>
+<p>CONTRACT: hard budget of 8 lines; the renderer clips, never wraps.</p>
+
+<p>Line budget:</p>
+
+<table>
+<tr><th>lines</th><th>content</th></tr>
+<tr><td>1</td><td>orientation: <code>⚠ n ⏳ n 💤 n</code> + top attention item + hint <code>answer &lt;id&gt; …</code></td></tr>
+<tr><td>2–6</td><td>up to five session rows: hue bar + short id/title + phase glyph + one-line description</td></tr>
+<tr><td>7</td><td>overflow (<code>+N more sessions</code> / <code>+N more attention items</code>) or the newest summary line (flash)</td></tr>
+<tr><td>8 (footer)</td><td><code>OMP_HUB_SOCK</code> path (default <code>~/.hub/hub.sock</code>) + <code>summaries &lt;n&gt;</code></td></tr>
+</table>
+
+<p>Counts: <code>⚠ n</code> = open attention items needing a human (kinds <code>approval|question|blocked</code>); <code>⏳ n</code> = sessions in phase <code>working|waiting</code>; <code>💤 n</code> = sessions <code>idle</code>. The hint mirrors the top <code>AttentionItem</code> — typing <code>answer a3f2 approved</code> at the hub routes through <code>hub_answer</code>. Session hue comes from the shared hash hue (lib/theme.ts), the same hue tagging the session in CLI and web rows.</p>
+
+<p>Example render (6 lines — under budget):</p>
+
+<pre class="code" data-lang="text">
+⚠2 ⏳3 💤1 · tilt: needs approval for bun add zod · answer a3f2: …
+▌a3f2 tilt     ⚠ blocked  bun add zod → awaiting your approval
+▌9d01 deploy   ▶ working  canary rollout 2/3
+▌c44e docs     … waiting  summarizing PR notes
+▌77aa scratch  💤 idle    no task
+~/.hub/hub.sock · summaries 14
+</pre>
+
+<p>States:</p>
+
+<table>
+<tr><th>state</th><th>trigger</th><th>render</th></tr>
+<tr><td><code>idle</code></td><td>no events for 30s and no open attention</td><td>orientation dimmed, rows muted</td></tr>
+<tr><td><code>busy</code></td><td>events flowing</td><td>newest row&#x27;s hue bar pulses; phase glyphs live</td></tr>
+<tr><td><code>attach</code></td><td><code>session_start</code> with <code>attached:true</code> arrives</td><td>that row highlights for one refresh</td></tr>
+<tr><td><code>summary-flash</code></td><td>new <code>summaries.jsonl</code> line</td><td>footer count flashes; line 7 shows the summary</td></tr>
+</table>
+
+<p>Update triggers: ANY hub event (reporter frame, cmd/reply, timer tick from <code>Clock</code>) schedules a render, debounced 250 ms trailing — a burst of events costs exactly one render. <code>setWidget</code> is called only when the rendered lines actually changed (string compare), so idle hubs cost zero UI churn.</p>
+
+<h3 id="agent-spawn">Agent spawn</h3>
+
+<p><code>/hub-agent</code> (and <code>hub agent</code>, and the Console toggle) spawn the hub&#x27;s own agent through the same path as any worker:</p>
+
+<ul><li>Child process: <code>OMP_BIN --mode acp</code>, spawned via the <code>AgentRuntime</code> port (<code>omp_agent</code> adapter), env <code>OMP_HUB_AGENT=1</code> (+ <code>OMP_HUB_MODEL</code> when set). The child is a peer session: it loads the extension normally, reports over <code>hub.sock</code>, and calls the nine tools as peer relay — minimal special casing only (## Anti-recursion guards 5–6: it may not become the hub, and its frames never raise attention).</li>
+<li>Registration: <code>status.json</code> record with <code>kind:&quot;agent&quot;</code> and <code>agentSurface:&quot;watcher&quot;</code> (declared surface id; surfaces register a renderer per id; default <code>watcher</code>, demo <code>pending</code>). Per-agent surface state lives at <code>~/.hub/agents/&lt;name&gt;/surface.json</code>.</li>
+</ul>
+<p>The watcher&#x27;s contract with lib — it is the thing that makes the main view:</p>
+
+<ul><li>Consume the <code>EventBus</code> and maintain per-session <code>phase</code> (<code>working|waiting|idle|blocked</code>) + one-line <code>description</code> in <code>status.json</code> — the digest lines every surface renders.</li>
+<li>Append per-turn summaries to <code>summaries.jsonl</code> via <code>SummaryStore</code> (<code>{t, sessionId, kind:&quot;summary&quot;|&quot;resolution&quot;, text, by}</code>).</li>
+<li>Raise and resolve <code>AttentionItem</code> rows via <code>AttentionStore</code> — kinds <code>approval|question|blocked|idle</code>; items resolve with <code>answer</code> + <code>by</code> when <code>hub_answer</code> fires, or get dismissed (resolved without reply) from a surface&#x27;s answer flow — the resolution lands as a <code>kind:&quot;resolution&quot;</code> line in <code>summaries.jsonl</code> either way.</li>
+</ul>
+<p>DECISION — the agent is optional, default off.</p>
+<p>WHY: the tool must be useful with zero ceremony; <code>/hub-start</code> alone gives roster + log + relay.</p>
+<p>CONTRACT: without the agent, surfaces hide the attention/summary rails and fall back to stream-only mode; the reporter still records everything. At most one hub agent at a time; <code>/hub-agent</code> adopts the existing one if alive.</p>
+
+<h3 id="shutdown">Shutdown</h3>
+
+<p>Hub <code>session_shutdown</code> teardown, in order:</p>
+
+<p>1. Widget cleared (<code>setWidget(&quot;omp-hub-stream&quot;, undefined)</code>).</p>
+<p>2. <code>hub.sock</code> server closed — connected reporters see EOF and enter reconnect backoff.</p>
+<p>3. Workers and brain disposed (<code>AgentRuntime.dispose</code>: SIGTERM, then kill after grace).</p>
+<p>4. Final <code>StatusStore</code> write (hub meta block updated; peer sessions left as-is).</p>
+<p>5. Open attention items are left open — they live in <code>status.json</code>, not in the process.</p>
+
+<p>DECISION — hub shutdown does NOT archive open sessions.</p>
+<p>WHY: sessions outlive the hub; archiving them would fake-close live work. On the next <code>/hub-start</code> every reporter reconnects and announces <code>session_start attached:true</code>, and pickup is idempotent (## Reporter).</p>
+<p>CONTRACT: <code>archive/YYYY-MM/&lt;id&gt;.json</code> records exist only for proper closes: <code>hub_kill_worker</code>, <code>hub_archive</code>, or a peer&#x27;s own <code>session_shutdown</code> (which sends <code>session_end</code>; hub closes that one session with <code>closedBy:&quot;session_exit&quot;</code>). Peer rows orphaned by a lost <code>session_end</code> frame are never silently hidden — they carry <code>lastActivity</code>, so staleness is visible in every surface.</p>
+
+<p>Reporter side: on its own <code>session_shutdown</code> the reporter makes one best-effort <code>session_end</code> send and stops; if the hub is already gone the frame is dropped with the outbox and the hub archives the session on cleanup or the row simply stays stale-visible. Nothing crashes: teardown is the same try/catch discipline as everything else.</p>
+
+<h3 id="env-vars">Env vars</h3>
+
+<table>
+<tr><th>var</th><th>default</th><th>read by</th><th>meaning</th></tr>
+<tr><td><code>OMP_HUB_SOCK</code></td><td><code>~/.hub/hub.sock</code></td><td>hub, reporter, CLI, web</td><td>hub.sock path; every surface must resolve the same value or nothing connects</td></tr>
+<tr><td><code>OMP_HUB_BRAIN</code></td><td>unset</td><td>extension factory</td><td><code>1</code> → early-return guard: this process is a driven child (brain/worker) and contributes RPC answers only</td></tr>
+<tr><td><code>OMP_HUB_MODEL</code></td><td>unset</td><td><code>/hub-start</code>, <code>/hub-agent</code>, <code>hub_spawn_worker</code></td><td>default model spec for spawned children</td></tr>
+<tr><td><code>OMP_BIN</code></td><td><code>omp</code></td><td><code>AgentRuntime</code> callers</td><td>binary spawned for brain, workers, and the hub agent</td></tr>
+<tr><td><code>OMP_HUB_AGENT</code></td><td>unset</td><td>extension factory</td><td><code>1</code> → this session IS the hub agent: its frames are marked <code>kind:&quot;agent&quot;</code> and excluded from attention/summarize loops</td></tr>
+</table>
+
+<h3 id="anti-recursion">Anti-recursion</h3>
+
+<p>Layered guards, cheapest first. Each is a decision with one job: the hub must never consume itself.</p>
+
+<p>1. <b>Brain guard.</b> <code>OMP_HUB_BRAIN=1</code> → factory early-return before any registration (## Entry). WHY: children are driven; a child that reports or serves forks the hub forever. CONTRACT: zero <code>pi.on</code> / <code>registerTool</code> / <code>registerCommand</code> in children.</p>
+<p>2. <b>Self-feed.</b> Hub-session events enter the local handler directly, never the socket (## Reporter). WHY: the hub consuming its own socket traffic would double-count itself and re-deliver its own output as input. CONTRACT: <code>hubActive &amp;&amp; sessionId === selfSessionId</code> → <code>handleEvent</code>, never <code>sendFrame</code>.</p>
+<p>3. <b>No self-delivery.</b> A <code>deliver</code> targeting <code>selfSessionId</code> is rejected at the hub (<code>ok:false</code>, &quot;cannot deliver to the hub itself&quot;). The hub agent answers through the <code>AttentionStore</code>, never by messaging the hub session.</p>
+<p>4. <b>Attach idempotency.</b> <code>session_start</code> with <code>attached:true</code> for a known <code>sessionId</code> upserts in place; duplicate frames, reconnect storms, and hub restarts never duplicate roster rows or attention items.</p>
+<p>5. <b>Agent sessions cannot become hubs.</b> <code>/hub-start</code> in a session with <code>OMP_HUB_AGENT=1</code> is refused (&quot;this session is the hub agent&quot;). WHY: a hub inside the hub&#x27;s own agent would recurse the watcher through itself.</p>
+<p>6. <b><code>kind:&quot;agent&quot;</code> isolation.</b> Frames from <code>OMP_HUB_AGENT=1</code> sessions are recorded in logs but never trigger attention raising or summarization; the <code>AttentionStore</code> rejects items whose <code>sessionId</code> is the agent&#x27;s. The watcher must not watch itself.</p>
+<p>7. <b>One-hop relay, bounded waits.</b> The hub never re-relays a reply as a <code>deliver</code>; cmd → reply is one hop. Every wait is bounded by a per-op timeout, and the reporter outbox is capped, so a dead hub cannot grow memory inside a reporting session.</p>
+</section>
+<section class="doc" id="doc-06-agents-and-skills"><div class="doc-tag"><b>Agents & Skills</b><span>docs/06-agents-and-skills.md</span></div><h2 id="sec">Agents and skills</h2>
+
+<p>This doc specifies pi-hub&#x27;s agent layer: the optional hub agent (the watcher),</p>
+<p>the <code>agentSurface</code> contract any agent can own, the two package skills</p>
+<p>(<code>skills/hub-ops</code>, <code>skills/hub-watcher</code>), the two agent files</p>
+<p>(<code>agents/hub-watcher.md</code>, <code>agents/pending-agent.md</code>), the end-to-end</p>
+<p>interaction flows, and the cadence and budget rules that keep the watcher</p>
+<p>cheap. Decision-record style: decision, why, contract.</p>
+
+<h3 id="hub-agent">Hub agent</h3>
+
+<p><b>Decision.</b> The hub agent is optional and <b>default off</b>.</p>
+
+<p><b>Why.</b> The hub is useful without it: the reporter still records every event,</p>
+<p>the nine <code>hub_*</code> tools still work, the log still streams. AI classification</p>
+<p>costs model calls and can be wrong; nothing structural may depend on it. When</p>
+<p>the agent is off, every surface falls back to raw stream-only mode and hides</p>
+<p>the attention/summary rails — the tool still records everything.</p>
+
+<p><b>Contract.</b></p>
+
+<p>Spawning — three entry points, one path:</p>
+
+<table>
+<tr><th>entry</th><th>where</th><th>behavior</th></tr>
+<tr><td><code>hub agent [--surface watcher]</code></td><td>CLI</td><td>spawns in the foreground; ctrl-c kills it</td></tr>
+<tr><td>Agent page toggle</td><td>Hub Console (04-web)</td><td>spawns under hub supervision</td></tr>
+<tr><td><code>/hub-agent</code></td><td>any omp session</td><td>plugin-registered command; delegates to the same spawn</td></tr>
+</table>
+
+<p>All three resolve to one spawn through the <code>AgentRuntime</code> port (<code>omp_agent</code></p>
+<p>adapter): a child <code>omp --mode acp</code> session with env <code>OMP_HUB_AGENT=1</code>,</p>
+<p>flagged <code>kind:&quot;agent&quot;</code> in <code>status.json</code> like any other session, selecting the</p>
+<p>agent file whose frontmatter declares the requested <code>surface:</code> (default</p>
+<p><code>watcher</code> → <code>agents/hub-watcher.md</code>; demo <code>pending</code> →</p>
+<p><code>agents/pending-agent.md</code>). Model via <code>OMP_HUB_MODEL</code>; omp binary via</p>
+<p><code>OMP_BIN</code>; remaining spawn env is the plugin&#x27;s contract (05-omp-plugin).</p>
+
+<p>The loop, per event batch from the <code>EventBus</code>:</p>
+
+<p>1. Subscribe <code>EventBus</code>, batch events.</p>
+<p>2. Classify per session → phase <code>working | waiting | idle | blocked</code> plus a</p>
+<p>   one-line description.</p>
+<p>3. Submit phase + description to the hub writer — the single writer of</p>
+<p>   <code>status.json</code>. The agent never writes the file itself; it only submits</p>
+<p>   updates over the control channel.</p>
+<p>4. Write summaries (≤2 sentences per session turn) to <code>summaries.jsonl</code>.</p>
+<p>5. Raise/resolve <code>attention[]</code> per the detection rules below.</p>
+
+<p>Detection rules — event in, kind and phase out:</p>
+
+<table>
+<tr><th>observed event</th><th>AttentionItem kind</th><th>phase effect</th></tr>
+<tr><td>tool result waiting on the user (approval prompt, permission request, confirm)</td><td>approval</td><td>waiting</td></tr>
+<tr><td>assistant output shaped as a question to the user</td><td>question</td><td>waiting</td></tr>
+<tr><td>tool failure the session cannot recover from alone</td><td>blocked</td><td>blocked</td></tr>
+<tr><td>session idle past its timeout with nothing queued (Clock port)</td><td>idle</td><td>idle</td></tr>
+<tr><td>anything else</td><td>no item raised</td><td>working</td></tr>
+</table>
+
+<p>Raise rules: one open item per (session, cause); a re-raise updates the text,</p>
+<p>never duplicates; resolution happens when the watcher observes the user reply,</p>
+<p>the tool proceeding, or the failure cleared — or when anyone answers via</p>
+<p><code>hub_answer</code>, <code>hub answer</code>, or the web console (see Interaction flows).</p>
+
+<p>On restart (crash, reboot) the watcher runs one catch-up pass: it re-derives</p>
+<p>phases from <code>status.json</code> and recent summaries, re-raises missing items from</p>
+<p>current process state (<code>hub_list_sessions</code>), and resumes the loop. EventBus</p>
+<p>events observed during downtime are not replayed; the catch-up pass replaces</p>
+<p>replay.</p>
+
+<p>System prompt sketch — the full text lives in <code>agents/hub-watcher.md</code>, with</p>
+<p>the classification rubric sourced from <code>skills/hub-watcher</code>:</p>
+
+<pre class="code" data-lang="text">
+You are the hub-watcher — the hub&#x27;s own agent. You keep ~/.hub/status.json
+truthful and the attention queue actionable. You never do product work.
+
+On every event batch:
+1. Attribute each event to its session.
+2. Classify the session phase: working | waiting | idle | blocked.
+3. Submit phase + description (&lt;= 12 words) to the hub writer.
+4. Detect attention. Raise sparingly: an item costs the user a context switch.
+   - tool result waiting on the user          -&gt; kind approval
+   - assistant output shaped as a question    -&gt; kind question
+   - unrecoverable tool failure               -&gt; kind blocked
+   - idle past timeout, nothing queued        -&gt; kind idle
+5. Write one summary line per session turn to summaries.jsonl (&lt;= 2 sentences).
+6. Resolve items you see answered, proceeded, or fixed.
+
+Rules:
+- One open item per (session, cause). Re-raise updates text, never duplicates.
+- Never edit product code, never run repo commands. Your writes are hub ops.
+- Unsure? Leave phase &quot;working&quot;, raise nothing. A false alarm is worse than
+  a late item.
+</pre>
+
+<p><b>Supervision.</b> A CLI foreground spawn dies with its terminal. Supervised</p>
+<p>spawns (web toggle, plugin) restart on-failure with bounded backoff. While</p>
+<p>the watcher is down, surfaces keep rendering the last known <code>status.json</code></p>
+<p>(durable state) marked stale; the plugin keeps recording events either way.</p>
+
+<h3 id="agentsurface">agentSurface</h3>
+
+<p><b>Decision.</b> An agent can own its UI: it declares an <code>agentSurface</code> id, and</p>
+<p>hub surfaces render that surface from a state file the agent rewrites —</p>
+<p>custom surfaces are file-backed; the bundled <code>watcher</code> surface is the one</p>
+<p>synthesized exception (from <code>status.json</code>).</p>
+
+<p><b>Why.</b> Agents know what they want to show — a pending queue, review diffs,</p>
+<p>a plan tree. Hard-coding each one into CLI and web duplicates the agent in two</p>
+<p>renderers. The file is the interface: renderer plugins read it, the agent</p>
+<p>writes it, nobody parses agent prose.</p>
+
+<p><b>Contract.</b></p>
+
+<p>1. An agent file declares <code>surface: &lt;id&gt;</code> in frontmatter. The hub exposes the</p>
+<p>   id on the agent&#x27;s session record in <code>status.json</code> and via</p>
+<p>   <code>hub_list_sessions</code>.</p>
+<p>2. Hosts register a renderer per id. Bundled renderers: <code>watcher</code> (default —</p>
+<p>   the attention-board digest) and <code>pending</code> (demo). Registration is</p>
+<p>   additive; a host lacking a renderer for an id renders the generic card.</p>
+<p>3. The agent rewrites <code>~/.hub/agents/&lt;name&gt;/surface.json</code> — its name, its</p>
+<p>   file, its writer. This is the deliberate per-file exception to the</p>
+<p>   hub-only writer of <code>status.json</code>: one writer per file, and here it is the</p>
+<p>   agent. Rewrite is atomic tmp+rename; <code>revision</code> is monotonic; the file is</p>
+<p>   capped at 64 KB (renderers truncate sections, never fail); unknown fields</p>
+<p>   are ignored (forward compat).</p>
+<p>4. Unknown id, missing file, or parse failure → generic card: headline plus</p>
+<p>   sections listed raw. A custom surface can never break a renderer it does</p>
+<p>   not know.</p>
+
+<p>Type sketches (pure domain types; placement owned by 01-architecture —</p>
+<p><code>SurfaceState</code> in <code>lib/domain/session.ts</code>, the registry as a port beside</p>
+<p><code>CommandSurface</code> in <code>lib/ports</code>):</p>
+
+<pre class="code" data-lang="ts">
+type SurfaceSection = {
+  title: string;
+  lines: string[];                 // pre-wrapped, rendered verbatim
+  tone?: &quot;info&quot; | &quot;warn&quot; | &quot;err&quot;;  // maps to theme tokens; default info
+};
+
+type SurfaceState = {
+  agent: string;        // agent name; must match the owning ~/.hub/agents/&lt;name&gt;/
+  surface: string;      // declared agentSurface id (&quot;watcher&quot;, &quot;pending&quot;, ...)
+  revision: number;     // bumped on every rewrite; stale-read detection
+  updatedAt: string;    // ISO-8601; renderers mark stale past 5 min
+  headline?: string;    // the one line the renderer leads with
+  sections?: SurfaceSection[];
+};
+</pre>
+
+<pre class="code" data-lang="ts">
+interface SurfaceRenderer {
+  readonly id: string;  // matches SurfaceState.surface
+  render(state: SurfaceState): string;  // host-agnostic payload (ANSI / HTML / widget lines)
+}
+
+interface SurfaceRegistry {
+  register(renderer: SurfaceRenderer): void;
+  render(id: string, state: SurfaceState): Result&lt;string, SurfaceError&gt;;
+  has(id: string): boolean;
+}
+</pre>
+
+<p><code>Result</code> is the core error model type from 01-architecture. The built-in</p>
+<p><code>watcher</code> renderer is the one exception to the file rule: it synthesizes its</p>
+<p><code>SurfaceState</code> from <code>status.json</code> (attention items, phases, summaries), so</p>
+<p>the hub agent is useful with zero extra writes — the default surface needs no</p>
+<p>file because <code>status.json</code> already carries its state. Every custom surface</p>
+<p>(<code>pending</code> and beyond) is file-backed.</p>
+
+<h3 id="skills">Skills</h3>
+
+<p><b>Decision.</b> Two package skills live in <code>skills/</code> at the package root</p>
+<p>(match-day convention: one directory per skill, <code>SKILL.md</code> uppercase, YAML</p>
+<p>frontmatter <code>name</code> + <code>description</code>): <code>skills/hub-ops</code> for any agent in any</p>
+<p>session, and <code>skills/hub-watcher</code> as the watcher&#x27;s system-prompt source.</p>
+
+<p><b>Why.</b> The <code>hub_*</code> tools are only as good as the judgment around them.</p>
+<p>hub-ops teaches any session to operate the hub without stepping on it (when</p>
+<p>to raise vs answer, how to summarize); hub-watcher encodes the classification</p>
+<p>rubric once, so the agent file stays thin and the rubric is reviewable as a</p>
+<p>skill rather than buried in a prompt.</p>
+
+<h4>skills/hub-ops/SKILL.md</h4>
+
+<p>Purpose: for ANY agent in ANY session — worker, subagent, or human-driven —</p>
+<p>how to use the <code>hub_*</code> tools correctly.</p>
+
+<pre class="code" data-lang="yaml">
+---
+name: hub-ops
+description: &gt;-
+  Operating the hub from inside any session with the hub_* tools: list,
+  send, call_tool, spawn, kill, archive, attention, answer, assign.
+  Covers when to raise vs answer, and summary style. Trigger when a hub_*
+  tool is available or the user mentions the hub.
+---
+</pre>
+
+<p>Contents sketch:</p>
+
+<ul><li>The nine tools, one rule each: <code>hub_list_sessions</code> (read state, never</li>
+</ul><p>  guess); <code>hub_send_message</code> (deliver a prompt; <code>wait_seconds</code> for</p>
+<p>  round-trips); <code>hub_call_tool</code> (run a tool in another session; never</p>
+<p>  fabricate a result); <code>hub_spawn_worker</code> / <code>hub_kill_worker</code> (lifecycle;</p>
+<p>  kill is confirm-grade); <code>hub_archive</code> (proper close — the only path to the</p>
+<p>  archive); <code>hub_attention</code> (list open items); <code>hub_answer</code> (answer + resolve</p>
+<p>  someone&#x27;s item); <code>hub_assign</code> (hand an idle session work).</p>
+<ul><li>When to raise vs answer: you never raise attention items for your own</li>
+</ul><p>  session — your reporter events plus the watcher do that. You answer with</p>
+<p>  <code>hub_answer</code> only when you hold the context to act; otherwise leave the</p>
+<p>  item for the user.</p>
+<ul><li>Summary style: when contributing a summary, ≤2 sentences, action-oriented</li>
+</ul><p>  (&quot;deploy canary 2/3; waiting on approval&quot;), never a narration of tool</p>
+<p>  output.</p>
+<ul><li>Availability rule (match-day pattern): if a <code>hub_*</code> tool is not available,</li>
+</ul><p>  say so and stop — never shell the <code>hub</code> CLI as a substitute, never</p>
+<p>  fabricate a tool call that does not exist.</p>
+
+<h4>skills/hub-watcher/SKILL.md</h4>
+
+<p>Purpose: the watcher&#x27;s system-prompt source. <code>agents/hub-watcher.md</code> stays</p>
+<p>thin (role + tools) and appends this skill.</p>
+
+<pre class="code" data-lang="yaml">
+---
+name: hub-watcher
+description: &gt;-
+  System prompt source for the hub agent: the classification rubric for
+  phases (working | waiting | idle | blocked) and attention kinds
+  (approval | question | blocked | idle), summary style, and resolution
+  recording. Loaded by the watcher; not for user sessions.
+---
+</pre>
+
+<p>Contents sketch:</p>
+
+<ul><li>Phase rubric: <code>working</code> (events flowing, no user wait) | <code>waiting</code></li>
+</ul><p>  (approval or question raised) | <code>idle</code> (timeout, nothing queued) |</p>
+<p>  <code>blocked</code> (unrecoverable failure).</p>
+<ul><li>Attention kinds rubric: the detection table from Hub agent, plus</li>
+</ul><p>  counter-examples — do NOT raise for routine tool output, questions the</p>
+<p>  session answered itself, or recoverable retries.</p>
+<ul><li>Summary style: max 1 summary per session turn, ≤2 sentences, present</li>
+</ul><p>  tense, name the next expected event.</p>
+<ul><li>Resolution recording: append a <code>kind:&quot;resolution&quot;</code> line to</li>
+</ul><p>  <code>summaries.jsonl</code> (<code>{t, sessionId, kind, text, by}</code>), keyed by the</p>
+<p>  attention id; recording is idempotent — a second resolution of the same id</p>
+<p>  is a no-op.</p>
+
+<h3 id="agent-files">Agent files</h3>
+
+<p><b>Decision.</b> Agent personas live in <code>agents/</code> at the package root</p>
+<p>(match-day pattern): one markdown file per persona, YAML frontmatter, body =</p>
+<p>system prompt. Two files ship: <code>agents/hub-watcher.md</code> and</p>
+<p><code>agents/pending-agent.md</code>.</p>
+
+<p><b>Why.</b> Spawnable personas as data, not code: the host validates the file&#x27;s</p>
+<p>frontmatter at spawn time, applies its tools/auto-exit policy for that launch</p>
+<p>only, and no file is copied, symlinked, or installed.</p>
+
+<h4>agents/hub-watcher.md</h4>
+
+<p>Role: the hub&#x27;s own agent — classify, summarize, raise/resolve. Read-only on</p>
+<p>the world; its writes are hub ops.</p>
+
+<pre class="code" data-lang="yaml">
+---
+name: hub-watcher
+description: &quot;Hub agent. Classifies sessions, maintains phase + attention, writes summaries. Read-only on the world; writes only hub ops.&quot;
+kind: agent
+surface: watcher
+tools: read, grep, hub_list_sessions, hub_attention
+model: ${OMP_HUB_MODEL}
+auto-exit: false
+system-prompt: append skills/hub-watcher
+---
+</pre>
+
+<ul><li>Tools are exactly read + the two list/attention reads. No send/assign: a</li>
+</ul><p>  watcher that prompts sessions crosses from observing into driving. No</p>
+<p>  <code>edit</code>/<code>write</code>: it must not touch product code. Raising and resolving</p>
+<p>  attention goes through the hub writer (the control-channel <code>attention</code> op,</p>
+<p>  frame shapes in 02-data-contracts), not through filesystem tools.</p>
+<ul><li><code>model: ${OMP_HUB_MODEL}</code> — a small fast model is the expected choice;</li>
+</ul><p>  unset falls back to the session default.</p>
+<ul><li><code>auto-exit: false</code> — the watcher is long-lived.</li>
+<li><code>system-prompt: append skills/hub-watcher</code> — the rubric lives in the skill,</li>
+</ul><p>  keeping this file a thin role shell.</p>
+
+<h4>agents/pending-agent.md</h4>
+
+<p>Role: demo agent owning a custom surface — a visible &quot;what I&#x27;ll do next&quot;</p>
+<p>queue maintained by the agent itself.</p>
+
+<pre class="code" data-lang="yaml">
+---
+name: pending-agent
+description: &quot;Demo agent owning the pending surface: maintains its next-step queue in surface.json. Proves the agentSurface contract end to end.&quot;
+kind: agent
+surface: pending
+tools: read, grep, write, hub_list_sessions, hub_send_message
+auto-exit: false
+---
+</pre>
+
+<ul><li><code>kind: agent</code>, <code>surface: pending</code>.</li>
+<li>Maintains <code>~/.hub/agents/pending-agent/surface.json</code>: headline plus one</li>
+</ul><p>  section per pending step, <code>tone: warn</code> on the step it is about to take.</p>
+<p>  <code>write</code> is for that one file only — the skill body pins it — which is what</p>
+<p>  makes the file contract real rather than aspirational.</p>
+<ul><li>Its interface IS the file contract: no bespoke UI code anywhere. The</li>
+</ul><p>  registered <code>pending</code> renderer just renders the file; a surface without</p>
+<p>  that renderer shows the generic card. Either way the agent ships its UI by</p>
+<p>  writing JSON — proof that a third-party agent can own a surface with zero</p>
+<p>  hub-side code changes.</p>
+
+<h3 id="interaction-flows">Interaction flows</h3>
+
+<p>Text sequence diagrams. Notation: numbered steps, <code>-&gt;</code> is a request or</p>
+<p>transition, comments after <code>#</code>.</p>
+
+<h4>User answers an attention item</h4>
+
+<p>Four entry paths, one outcome; resolution is recorded first (instant UI</p>
+<p>feedback on every surface), delivery second.</p>
+
+<pre class="code" data-lang="text">
+answer  (user -&gt; session)
+  entries:
+    hub answer &lt;item&gt; &lt;text&gt;     # CLI: command or inline board-row input
+    POST /api/answer             # web: answer input on the attention card
+    hub_answer(id, text)         # omp widget: the hub session&#x27;s agent answers
+    hub_answer(id, text)         # another agent, per skills/hub-ops rules
+  1. host   -&gt; hub.sock: cmd answer {cmdId, item, text}
+  2. hub    -&gt; AttentionStore.resolve(item, text)   # answer + resolvedAt; idempotent
+  3. hub    -&gt; session: sendUserMessage(text)       # user_message frame; session resumes
+  4. hub    -&gt; summaries.jsonl kind:&quot;resolution&quot;    # once, keyed by item id
+  5. hub    -&gt; surfaces: item leaves the board      # next poll / SSE push
+  delivery failure -&gt; watcher re-raises kind blocked (&quot;answer delivery failed&quot;)
+                      # update, never duplicate
+</pre>
+
+<h4>Agent raises an item</h4>
+
+<pre class="code" data-lang="text">
+raise   (session -&gt; attention queue)
+  1. plugin reporter -&gt; hub.sock: session_start / user_message / assistant_message /
+     tool_call / agent_end frames   # attached flag on session_start; spawned too
+  2. hub -&gt; EventBus: event batch
+  3. watcher: classify session -&gt; phase + description, submitted to the hub writer
+  4. watcher: detection rules -&gt; raise AttentionItem (one per (session, cause))
+  5. hub (single writer): append to status.json attention[]; set session phase
+  6. surfaces: amber item (#f5c04e) + updated orientation line on next snapshot
+</pre>
+
+<h4>Idle assign</h4>
+
+<pre class="code" data-lang="text">
+assign  (user -&gt; idle session)
+  1. Clock: session idle past its timeout -&gt; watcher raises kind idle, phase idle
+  2. user entry: board `assign:` input / hub_assign(id, task) / POST /api/assign
+  3. host -&gt; hub: cmd assign {id, task}
+  4. hub -&gt; session: sendUserMessage(task)      # idle item resolved, recorded once
+  5. watcher: phase = working on the next batch # description becomes the task
+</pre>
+
+<h4>Archive close</h4>
+
+<pre class="code" data-lang="text">
+archive (close a session properly)
+  1. entry: hub_archive(id) tool / CLI kill confirm / session exits cleanly
+  2. hub: resolve every open attention item of the session   # recorded, no answers
+  3. hub: finalSummary = last summary line for that session
+  4. hub (single writer, atomic tmp+rename):
+       remove the session from status.json sessions
+       append a link to status.json archived[]
+       write archive/YYYY-MM/&lt;id&gt;.json {record, closedAt, closedBy, finalSummary}
+  5. surfaces: session leaves running/idle strips; detail view switches to archive flavor
+</pre>
+
+<h3 id="cadence">Cadence</h3>
+
+<p><b>Decision.</b> Event-driven with tight budgets: the watcher reacts to events,</p>
+<p>never polls the filesystem, and its per-turn output is capped.</p>
+
+<table>
+<tr><th>trigger</th><th>watcher action</th><th>budget</th></tr>
+<tr><td><code>agent_end</code> (per session)</td><td>re-summarize + attention scan</td><td>trailing debounce 2 s per session (Clock); max 1 summary per turn, ≤2 sentences</td></tr>
+<tr><td>tool result waiting on the user</td><td>raise approval, phase waiting</td><td>immediate; 1 item per cause</td></tr>
+<tr><td>assistant output question-shaped</td><td>raise question, phase waiting</td><td>immediate; 1 item per cause</td></tr>
+<tr><td>tool failure</td><td>raise blocked, phase blocked</td><td>immediate</td></tr>
+<tr><td>idle timeout (Clock)</td><td>raise idle, phase idle</td><td>once per idle episode</td></tr>
+<tr><td>answer observed (any path)</td><td>resolve + resolution line</td><td>idempotent by attention id</td></tr>
+</table>
+
+<p>Rules:</p>
+
+<ul><li>Max 1 summary per session turn, ≤2 sentences, action-oriented; appended to</li>
+</ul><p>  <code>summaries.jsonl</code> as <code>{t, sessionId, kind: &quot;summary&quot;, text, by}</code>.</p>
+<ul><li>The attention scan runs on waiting/failure tool results and on <code>agent_end</code></li>
+</ul><p>  — never on every event. Classification is one pass per event batch, not</p>
+<p>  per event.</p>
+<ul><li>Resolution is recorded once: the <code>kind:&quot;resolution&quot;</code> line is keyed by the</li>
+</ul><p>  attention id; re-resolving the same id is a no-op (guarded in both the</p>
+<p>  watcher and the hub writer).</p>
+<ul><li>Debounce is per session, so a burst in one session collapses to one pass;</li>
+</ul><p>  sessions stay independent.</p>
+<ul><li>While the watcher is down nothing is written and nothing is lost:</li>
+</ul><p>  <code>status.json</code> and <code>summaries.jsonl</code> keep their last state, and the</p>
+<p>  restart catch-up pass covers the gap.</p>
+<ul><li>The watcher itself stays cheap: model via <code>OMP_HUB_MODEL</code> (small and fast</li>
+</ul><p>  beats frontier here), restart on-failure with bounded backoff, and no</p>
+<p>  polling loops — the Clock port provides the only timers (idle timeout,</p>
+<p>  summary debounce).</p>
+</section>
+<footer>pi-hub spec · docs/ are the source of truth; this page is their rendered integration. Discovery artifact — no implementation code exists yet by design.</footer>
+</body>
+</html>

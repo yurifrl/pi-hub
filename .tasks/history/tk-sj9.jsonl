@@ -1,0 +1,15 @@
+{"issue_id":"tk-sj9","action":"save","at":"2026-08-30T18:55:16.075Z","actor":null,"data":{"status":"open","title":"extensions: 9 hub_* tools — list send call_tool spawn kill archive attention answer assign"}}
+{"issue_id":"tk-sj9","action":"comment","at":"2026-08-30T18:59:43.526Z","actor":"yuri","data":{"text":"docref probe"}}
+{"issue_id":"tk-sj9","action":"comment","at":"2026-08-30T19:00:21.493Z","actor":"yuri","data":{"text":"docref probe two"}}
+{"issue_id":"tk-sj9","action":"comment","at":"2026-08-30T19:00:21.815Z","actor":"yuri","data":{"text":"docs/05 Tools section. docs/02 hub.sock frames. docs/02 Attention lifecycle."}}
+{"issue_id":"tk-sj9","action":"comment","at":"2026-08-30T19:00:54.192Z","actor":"yuri","data":{"text":"probe three per-op"}}
+{"issue_id":"tk-sj9","action":"comment","at":"2026-08-30T19:00:54.531Z","actor":"yuri","data":{"text":"probe four schema sketches"}}
+{"issue_id":"tk-sj9","action":"comment","at":"2026-08-30T19:01:07.492Z","actor":"yuri","data":{"text":"probe five registered descriptions"}}
+{"issue_id":"tk-sj9","action":"comment","at":"2026-08-30T19:01:07.843Z","actor":"yuri","data":{"text":"probe six hub-local vs peer relay"}}
+{"issue_id":"tk-sj9","action":"comment","at":"2026-08-30T19:01:56.068Z","actor":"yuri","data":{"text":"probe a all nine tools"}}
+{"issue_id":"tk-sj9","action":"comment","at":"2026-08-30T19:02:36.876Z","actor":"yuri","data":{"text":"probe b with schema sketches registered"}}
+{"issue_id":"tk-sj9","action":"comment","at":"2026-08-30T19:02:58.195Z","actor":"yuri","data":{"text":"probe d timeout"}}
+{"issue_id":"tk-sj9","action":"comment","at":"2026-08-30T19:02:58.533Z","actor":"yuri","data":{"text":"probe e per-op"}}
+{"issue_id":"tk-sj9","action":"comment","at":"2026-08-30T19:03:20.811Z","actor":"yuri","data":{"text":"Spec: docs/05-omp-plugin.md Tools section. All nine tools with schema sketches, registered descriptions, routing hub-local vs peer relay, timeout for each. Socket commands in docs/02-data-contracts.md hub.sock frames. Attention semantics: docs/02 Attention lifecycle."}}
+{"issue_id":"tk-sj9","action":"dependency_added","at":"2026-08-30T19:05:37.648Z","actor":"yuri","data":{"target":"tk-epx","type":"blocks"}}
+{"issue_id":"tk-sj9","action":"save","at":"2026-08-30T19:06:42.449Z","actor":null,"data":{"status":"open","title":"extensions: 9 hub_* tools — list send call_tool spawn kill archive attention answer assign"}}

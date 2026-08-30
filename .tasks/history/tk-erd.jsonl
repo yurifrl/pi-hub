@@ -1,0 +1,3 @@
+{"issue_id":"tk-erd","action":"save","at":"2026-08-30T18:55:46.852Z","actor":null,"data":{"status":"open","title":"skills: hub-ops + hub-watcher SKILL.md files"}}
+{"issue_id":"tk-erd","action":"comment","at":"2026-08-30T19:04:37.109Z","actor":"yuri","data":{"text":"Spec: docs/06-agents-and-skills.md Skills section: skills/hub-ops/SKILL.md (nine hub tools one rule each, raise vs answer, summary style max 2 sentences, availability rule) and skills/hub-watcher/SKILL.md (phase rubric, attention kinds rubric with counter-examples, resolution recording). Format: SKILL.md uppercase with YAML frontmatter name description."}}
+{"issue_id":"tk-erd","action":"dependency_added","at":"2026-08-30T19:06:09.566Z","actor":"yuri","data":{"target":"tk-bfx","type":"blocks"}}

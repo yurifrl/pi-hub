@@ -1,0 +1,3 @@
+{"issue_id":"tk-dfr","action":"save","at":"2026-08-30T18:55:27.562Z","actor":null,"data":{"status":"open","title":"cli: bin.ts commander tree, config load, exit codes, output envelope json/ndjson"}}
+{"issue_id":"tk-dfr","action":"comment","at":"2026-08-30T19:03:34.549Z","actor":"yuri","data":{"text":"Spec: docs/03-cli.md bin (commander tree, config ~/.hub/config.json plus --config override, exit codes 0 ok 1 usage 2 unavailable 3 timeout), Output policies (human json ndjson, envelope type snapshot or error). Error taxonomy mapping: docs/01-architecture.md Error model."}}
+{"issue_id":"tk-dfr","action":"dependency_added","at":"2026-08-30T19:05:54.549Z","actor":"yuri","data":{"target":"tk-bfx","type":"blocks"}}

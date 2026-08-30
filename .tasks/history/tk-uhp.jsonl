@@ -1,0 +1,4 @@
+{"issue_id":"tk-uhp","action":"save","at":"2026-08-30T18:55:14.824Z","actor":null,"data":{"status":"open","title":"lib: jsonl store append-only writer with atomic tmp+rename for status.json"}}
+{"issue_id":"tk-uhp","action":"save","at":"2026-08-30T18:56:42.377Z","actor":null,"data":{"status":"open","title":"lib: jsonl store append-only writer with atomic tmp+rename for status.json"}}
+{"issue_id":"tk-uhp","action":"dependency_added","at":"2026-08-30T19:05:21.002Z","actor":"yuri","data":{"target":"tk-wmx","type":"blocks"}}
+{"issue_id":"tk-uhp","action":"save","at":"2026-08-30T19:06:23.959Z","actor":null,"data":{"status":"open","title":"lib: jsonl store append-only writer with atomic tmp+rename for status.json"}}

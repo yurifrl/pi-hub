@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-hai",
+  "title": "extensions: hub.ts entry guard + /hub-start /hub-stop /hub-agent + brain child spawn",
+  "description": "",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-30T18:55:15.183Z",
+  "updated_at": "2026-08-30T19:06:41.809Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": "Spec: docs/05-omp-plugin.md §Entry (factory early-return OMP_HUB_BRAIN=1, /hub-start setWidget key omp-hub-stream + brain child omp --mode rpc, /hub-stop, /hub-agent), §Shutdown (hub shutdown does NOT archive open sessions), §Env vars (OMP_HUB_SOCK ~/.hub/hub.sock, OMP_HUB_BRAIN, OMP_HUB_MODEL, OMP_BIN, OMP_HUB_AGENT), §Anti-recursion. Socket serving via lib unix_socket adapter (docs/01 §Package layout).",
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [
+    {
+      "issue_id": "tk-hai",
+      "depends_on_id": "tk-uhp",
+      "type": "blocks",
+      "created_at": "2026-08-30T19:05:36.661Z",
+      "created_by": "yuri",
+      "metadata": {}
+    }
+  ],
+  "dependency_count": 1,
+  "dependent_count": 1,
+  "comments": [],
+  "comment_count": 0
+}

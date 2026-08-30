@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-sj9",
+  "title": "extensions: 9 hub_* tools — list send call_tool spawn kill archive attention answer assign",
+  "description": "",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-30T18:55:16.074Z",
+  "updated_at": "2026-08-30T19:06:42.448Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": null,
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [
+    {
+      "issue_id": "tk-sj9",
+      "depends_on_id": "tk-epx",
+      "type": "blocks",
+      "created_at": "2026-08-30T19:05:37.646Z",
+      "created_by": "yuri",
+      "metadata": {}
+    }
+  ],
+  "dependency_count": 1,
+  "dependent_count": 1,
+  "comments": [
+    {
+      "id": "comment-42dc15bc-bb35-4b8f-b8b3-51f8db9e7da7",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "docref probe",
+      "created_at": "2026-08-30T18:59:43.525Z"
+    },
+    {
+      "id": "comment-4d3959fb-d424-4edc-8966-1acaa088e1f6",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "docref probe two",
+      "created_at": "2026-08-30T19:00:21.492Z"
+    },
+    {
+      "id": "comment-6b247b35-ba9a-46d3-9ebb-c222bd25aee8",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "docs/05 Tools section. docs/02 hub.sock frames. docs/02 Attention lifecycle.",
+      "created_at": "2026-08-30T19:00:21.814Z"
+    },
+    {
+      "id": "comment-b049e9b6-c655-4000-8934-172c657c7ab9",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "probe three per-op",
+      "created_at": "2026-08-30T19:00:54.190Z"
+    },
+    {
+      "id": "comment-db38797e-3c58-47ee-ad7b-47cd8e21dfb1",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "probe four schema sketches",
+      "created_at": "2026-08-30T19:00:54.530Z"
+    },
+    {
+      "id": "comment-887f3a4c-5413-41ef-8605-2435cbc0391a",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "probe five registered descriptions",
+      "created_at": "2026-08-30T19:01:07.491Z"
+    },
+    {
+      "id": "comment-61117276-79b1-4324-b6e6-785717b4e73f",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "probe six hub-local vs peer relay",
+      "created_at": "2026-08-30T19:01:07.842Z"
+    },
+    {
+      "id": "comment-887d9339-a6c2-4aad-9390-135ce6633183",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "probe a all nine tools",
+      "created_at": "2026-08-30T19:01:56.067Z"
+    },
+    {
+      "id": "comment-f91f65cd-a211-4992-8eea-239d6bb06666",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "probe b with schema sketches registered",
+      "created_at": "2026-08-30T19:02:36.874Z"
+    },
+    {
+      "id": "comment-7970c6bd-867f-4306-9dc1-73f86b35aefe",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "probe d timeout",
+      "created_at": "2026-08-30T19:02:58.194Z"
+    },
+    {
+      "id": "comment-73f0ee26-164f-4960-8092-abebafe43fc6",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "probe e per-op",
+      "created_at": "2026-08-30T19:02:58.532Z"
+    },
+    {
+      "id": "comment-ea4804fa-00d3-482a-8483-688b7cb3d531",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "Spec: docs/05-omp-plugin.md Tools section. All nine tools with schema sketches, registered descriptions, routing hub-local vs peer relay, timeout for each. Socket commands in docs/02-data-contracts.md hub.sock frames. Attention semantics: docs/02 Attention lifecycle.",
+      "created_at": "2026-08-30T19:03:20.810Z"
+    }
+  ],
+  "comment_count": 12
+}

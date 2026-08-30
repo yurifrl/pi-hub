@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-nbw",
+  "title": "web: session detail + archive flavor + agent surface page",
+  "description": "",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-30T18:55:45.922Z",
+  "updated_at": "2026-08-30T19:06:08.566Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": null,
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [
+    {
+      "issue_id": "tk-nbw",
+      "depends_on_id": "tk-swx",
+      "type": "blocks",
+      "created_at": "2026-08-30T19:06:08.566Z",
+      "created_by": "yuri",
+      "metadata": {}
+    }
+  ],
+  "dependency_count": 1,
+  "dependent_count": 0,
+  "comments": [
+    {
+      "id": "comment-d81b8a87-51bf-4392-acee-ea2cc7efc609",
+      "issue_id": "tk-nbw",
+      "author": "yuri",
+      "text": "Spec: docs/04-web.md Session detail (full log via status.json log link not embedded, phase timeline with phaseHistory fallback, tool bars, pinned send box, 409 rule for archived sessions) and archive flavor (closed badge, close date, final summary pinned). Agent page: docs/04 Agent page (surface registry, pending surface, unknown id generic card) plus docs/06 agentSurface contract.",
+      "created_at": "2026-08-30T19:04:13.005Z"
+    }
+  ],
+  "comment_count": 1
+}

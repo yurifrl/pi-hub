@@ -1,0 +1,4 @@
+{"issue_id":"tk-z9a","action":"save","at":"2026-08-30T18:55:15.762Z","actor":null,"data":{"status":"open","title":"extensions: widget — 8-line attention render with counts, top item, hue bars"}}
+{"issue_id":"tk-z9a","action":"comment","at":"2026-08-30T18:58:33.772Z","actor":"yuri","data":{"text":"Spec: docs/05-omp-plugin.md Widget section. 8-line budget, line1 attention counts plus top item plus answer hint, per-session hue bars, footer socket path plus summary count, states idle busy attach summary-flash, 250ms debounce. Theme tokens: docs/01-architecture.md. Hue computation: docs/03-cli.md Rendering (session-id hash)."}}
+{"issue_id":"tk-z9a","action":"dependency_added","at":"2026-08-30T19:05:37.345Z","actor":"yuri","data":{"target":"tk-epx","type":"blocks"}}
+{"issue_id":"tk-z9a","action":"save","at":"2026-08-30T19:06:42.792Z","actor":null,"data":{"status":"open","title":"extensions: widget — 8-line attention render with counts, top item, hue bars"}}

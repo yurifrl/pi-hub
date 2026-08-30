@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-epx",
+  "title": "extensions: reporter — session events to hub.sock with attach-on-connect",
+  "description": "",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-30T18:55:15.484Z",
+  "updated_at": "2026-08-30T19:06:42.122Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": null,
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [
+    {
+      "issue_id": "tk-epx",
+      "depends_on_id": "tk-hai",
+      "type": "blocks",
+      "created_at": "2026-08-30T19:05:36.998Z",
+      "created_by": "yuri",
+      "metadata": {}
+    }
+  ],
+  "dependency_count": 1,
+  "dependent_count": 2,
+  "comments": [
+    {
+      "id": "comment-c73c0e89-2fde-4031-9e6d-225d0dc560cd",
+      "issue_id": "tk-epx",
+      "author": "yuri",
+      "text": "Spec: docs/05-omp-plugin.md  Reporter  (session_start attached:false, input to user_message skipping /commands, message_end assistant_message fallback, tool_execution_start tool_call, agent_end; hub self-feed local when hubActive and sessionId equals selfSessionId; attach-on-connect session_start attached:true with sessionId/title/cwd, idempotent on hub restart). Frame shapes: docs/02-data-contracts.md hub.sock reporter frames.",
+      "created_at": "2026-08-30T18:58:05.573Z"
+    }
+  ],
+  "comment_count": 1
+}
