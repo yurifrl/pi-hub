@@ -1,0 +1,3 @@
+# Workspaces resolve through node_modules symlinks (hoisted) so Bun, Node, and
+# TypeScript all resolve @yurifrl/hub by name (docs/01-architecture.md import matrix).
+install.linker = "hoisted"

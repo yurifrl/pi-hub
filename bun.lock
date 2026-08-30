@@ -1,0 +1,39 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "@yurifrl/pi-hub",
+      "peerDependencies": {
+        "@earendil-works/pi-coding-agent": "*",
+        "@earendil-works/pi-tui": "*",
+      },
+      "optionalPeers": [
+        "@earendil-works/pi-coding-agent",
+        "@earendil-works/pi-tui",
+      ],
+    },
+    "cli": {
+      "name": "@yurifrl/hub-cli",
+      "version": "0.1.0",
+      "bin": {
+        "hub": "./src/bin.ts",
+      },
+    },
+    "lib": {
+      "name": "@yurifrl/hub",
+      "version": "0.1.0",
+    },
+    "web": {
+      "name": "@yurifrl/hub-web",
+      "version": "0.1.0",
+    },
+  },
+  "packages": {
+    "@yurifrl/hub": ["@yurifrl/hub@workspace:lib"],
+
+    "@yurifrl/hub-cli": ["@yurifrl/hub-cli@workspace:cli"],
+
+    "@yurifrl/hub-web": ["@yurifrl/hub-web@workspace:web"],
+  }
+}

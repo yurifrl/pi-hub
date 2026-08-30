@@ -1,0 +1,13 @@
+{
+  "name": "@yurifrl/hub-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "hub": "./src/bin.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "check": "bun build --no-bundle ./src/bin.ts --outfile=/tmp/pi-hub-cli-build.js"
+  }
+}
