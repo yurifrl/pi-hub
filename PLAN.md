@@ -46,6 +46,15 @@ pi-hub/
 └── docs/                 # this spec
 ```
 
+### tk-sne verification
+
+Root manifest contract verified against docs/01-architecture.md lines 130-148:
+name @yurifrl/pi-hub, private true, workspaces [lib, cli, web], optional
+peerDependencies @earendil-works/pi-coding-agent + @earendil-works/pi-tui with
+peerDependenciesMeta optional — all present. Committed as 18ae03b on
+matchday/tk-sne; extra "type": "module" matches the reference
+pi-fbr-match-day/package.json and is additive, not a deviation.
+
 ## 2. Data contracts (docs/02-data-contracts.md)
 
 Schemas + lifecycle for everything `~/.hub/` and `hub.sock`: **docs/02-data-contracts.md**
