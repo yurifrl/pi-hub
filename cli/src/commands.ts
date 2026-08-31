@@ -3,15 +3,16 @@
 //
 // Each body receives a typed context (socket client + file reader + io +
 // config + output policy) and is wired into the tree. Mutations and archive
-// listing are real implementations (tk-tku); the board family and remaining
-// read-only views belong to later tasks (tk-avx/tk-2xf render/screens) and
-// throw NotImplemented — a typed usage-class error bin maps to the standard
-// usage envelope.
+// listing are real implementations (tk-tku); the bare board is real
+// (tk-avx, screens/board.ts); the remaining read-only views belong to later
+// tasks and throw NotImplemented — a typed usage-class error bin maps to the
+// standard usage envelope.
 
 import type { HubCliConfig } from "./config";
 import type { HubFiles } from "./files";
 import type { OutputPolicy } from "./output";
 import type { CommandIo } from "./io";
+import { runBoard } from "./screens/board";
 import { cmdAnswer } from "./cmd_answer";
 import { cmdAssign } from "./cmd_assign";
 import { cmdSend } from "./cmd_send";
@@ -57,8 +58,9 @@ export type CommandBody = (ctx: CommandContext, ...args: never[]) => Promise<voi
 
 // ---- board family (tk-avx board screen, tk-2xf watch) -----------------------
 
-export const boardBody: CommandBody = () => {
-  throw new NotImplemented("hub (board)", "tk-avx");
+/** Bare `hub` — the attention board (docs/03 §hub (bare)). Screen owned by screens/board.ts. */
+export const boardBody: CommandBody = async (ctx): Promise<void> => {
+  await runBoard(ctx);
 };
 
 export const watchBody: CommandBody = () => {
