@@ -11,6 +11,7 @@ import { selectPolicy, PolicyError, writeEnvelope, type OutputFormat } from "./o
 import { errorEnvelope, exitCodeFor } from "./envelope";
 import { makeFileReader } from "./files";
 import { hubCmd } from "./hub_socket";
+import { processIo } from "./io";
 import {
   type CommandBody,
   type CommandContext,
@@ -30,6 +31,9 @@ import {
   webBody,
   agentBody,
 } from "./commands";
+import { KillDeclined } from "./cmd_kill";
+import { CliError } from "./cli_errors";
+import { mixedTail } from "./commands";
 
 /** Global flags, accepted before or after any subcommand (docs/03 §bin). */
 const GLOBALS = (c: Command): Command =>
@@ -72,9 +76,13 @@ program.action(invoke(boardBody));
 const sub = (decl: string, description: string): Command =>
   GLOBALS(program.command(decl).description(description));
 
-sub("answer <item> <text...>", "reply to an attention item, resolves it").action(invoke(answerBody));
+sub("answer <item> <text...>", "reply to an attention item, resolves it").action((item: string, text: string[]) =>
+  invoke(answerBody)(item, text),
+);
 
-sub("assign [id] <task...>", "give a session work").action(invoke(assignBody));
+sub("assign [id] <task...>", "give a session work").action((id: string | undefined, task: string[]) =>
+  invoke(assignBody)(mixedTail(id, task)),
+);
 
 sub("log [-f] [id]", "raw session stream")
   .option("-f", "follow appended lines")
@@ -84,20 +92,24 @@ sub("summaries [id]", "AI summary rail")
   .option("--tail <n>", "last N lines", parsePositiveInt)
   .action(invoke(summariesBody));
 
-sub("send [id] <msg...>", "deliver a prompt to a session").action(invoke(sendBody));
+sub("send [id] <msg...>", "deliver a prompt to a session").action((id: string | undefined, msg: string[]) =>
+  invoke(sendBody)(mixedTail(id, msg)),
+);
 
 sub("tool <id> <tool> [json]", "run a tool inside a session")
   .option("--wait <seconds>", "tool budget in seconds", parsePositiveInt)
-  .action(invoke(toolBody));
+  .action((id: string, tool: string, json: string | undefined, opts: { wait?: number }) =>
+    invoke(toolBody)(id, tool, json, opts),
+  );
 
 sub("spawn", "spawn a worker session")
   .option("--name <name>")
   .option("--model <model>")
-  .action(invoke(spawnBody));
+  .action((opts: { name?: string; model?: string }) => invoke(spawnBody)(opts));
 
 sub("kill <id>", "close a session (red confirm)")
   .option("--yes", "skip the confirm prompt")
-  .action(invoke(killBody));
+  .action((id: string, opts: { yes?: boolean }) => invoke(killBody)(id, opts));
 
 sub("archive [id]", "list the archive / close+archive a session").action((id: string | undefined) =>
   invoke(id === undefined ? archiveListBody : archiveCloseBody)(id),
@@ -192,12 +204,18 @@ export const run = async (argv: string[]): Promise<number> => {
     config,
     policy,
     files: makeFileReader(config),
-    cmd: (op, args, timeoutMs) => hubCmd(config.sock, op, args, timeoutMs ?? config.replyTimeoutMs),
+    io: processIo(),
+    cmd: async (op, args, timeoutMs) => {
+      const out = await hubCmd(config.sock, op, args, timeoutMs ?? config.replyTimeoutMs);
+      return "result" in out ? out : { error: { code: out.error.code, message: out.error.message } };
+    },
   };
   try {
     await invoked.body(ctx, ...(invoked.args as never[]));
     return 0;
   } catch (e) {
+    if (e instanceof KillDeclined) return 0; // declined kill confirm — clean exit, no changes
+    if (e instanceof CliError) return exitCodeFor(e.code); // failure channel already emitted the envelope/stderr line
     if (e instanceof NotImplemented) return emitUsage(argv, e.message);
     // unhandled exception → exit 1, message on stderr (docs/03 §Exit codes Decision)
     if (policy.format === "human") {
