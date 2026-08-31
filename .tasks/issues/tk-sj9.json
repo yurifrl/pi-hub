@@ -4,16 +4,16 @@
   "id": "tk-sj9",
   "title": "extensions: 9 hub_* tools — list send call_tool spawn kill archive attention answer assign",
   "description": "",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "task",
   "owner": null,
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:16.074Z",
-  "updated_at": "2026-08-30T19:06:42.448Z",
+  "updated_at": "2026-08-31T19:51:30.537Z",
   "started_at": null,
-  "closed_at": null,
+  "closed_at": "2026-08-31T19:51:30.537Z",
   "due_at": null,
   "defer_until": null,
   "parent": null,
@@ -122,7 +122,21 @@
       "author": "yuri",
       "text": "Spec: docs/05-omp-plugin.md Tools section. All nine tools with schema sketches, registered descriptions, routing hub-local vs peer relay, timeout for each. Socket commands in docs/02-data-contracts.md hub.sock frames. Attention semantics: docs/02 Attention lifecycle.",
       "created_at": "2026-08-30T19:03:20.810Z"
+    },
+    {
+      "id": "comment-21df667d-9604-434c-acbb-42ee51e21d3e",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "VERIFIED PASS",
+      "created_at": "2026-08-31T19:51:02.977Z"
+    },
+    {
+      "id": "comment-3fcdeabe-50a4-4f65-8934-e4bcf3142f06",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "VERIFIED PASS: (1) 597/0 x3 bun test runs, bunx tsc --noEmit = 0. (2) Pass 1 hunk review: 9/9 tool names + registered descriptions verbatim vs docs/05 §Tools; wait_seconds Type.Integer 0-600 optional (bounds tested: -1/0.5/601 reject, 600 pass); request-payload mapping = docs/02 (send {sessionId,text,waitMs>0}, tool {sessionId,tool,args-object after JSON.parse}, kill/archive/assign sessionId, answer {id,text}, attention list); timeout formulas exact (send max(w*1000+15s,30s), tool w*1000+30s, list/attention 10s, spawn 60s, kill/archive/answer/assign 15s); timeout expiry + connect failure + thrown body all isError envelopes, never rejection. hub.ts diff additive-only (import + register loop placed after brain early-return guard — brain test asserts zero registrations); hub_local.ts/lib untouched; scope = hub_tools.ts + tests + hub.ts registration + 3 de-flaked hub.test.ts sleeps (assertions unchanged, polling only). (3) Mutation probes: (a) catch-all rethrow -> 'bodies never throw even when deps explode' FAILS as expected; (b) send timeout 15s->5s -> timeout test FAILS as expected; (c) reply correlation corrupted to FIFO in lib/adapters/unix_socket.ts -> 597 still GREEN: no concurrent-calls correlation test exists (gap; per-cmdId pending map + fresh client per call is correct by design). All mutations reverted byte-identical (git diff empty). (4) Live e2e vs real hub.sock: raw cmd frame -> {v:1,ch:'reply',cmdId:'raw-1',ok:true,result:{queued:true}}; relay hub_send_message -> queued:true isError:false; hub-local hub_attention -> surface.dispatch {name:'attention',args:{action:'list'},by:'plugin'}; dead socket -> isError:true 'hub unreachable ... /hub-start'. Minor notes, non-blocking: wait_seconds .describe wording differs from per-tool docs sketches ('default 0' shared vs tool's 'default 240'); hub replies {queued:true} immediately so wait_seconds today only bounds the await (hub-side reply-wait is lib scope); no concurrent-calls test (probe c gap).",
+      "created_at": "2026-08-31T19:51:22.334Z"
     }
   ],
-  "comment_count": 12
+  "comment_count": 14
 }
