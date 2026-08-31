@@ -79,6 +79,10 @@ type Connection = {
     sock: net.Socket;
     /** subscribed clients receive unsolicited event frames (docs/02 §Event frames) */
     subscribed: boolean;
+    /** client id from the hello frame (cli | web | plugin | agent) — the
+     * deliverTo bridge targets plugin clients by this id (docs/02 §hub.sock:
+     * deliver is the reporter's one inbound mutation) */
+    client?: string;
     buffer: string;
 };
 
@@ -145,6 +149,7 @@ export const startUnixSocketServer = (opts: ServerOptions) => {
             conn.sock.end();
             return;
         }
+        if (typeof frame.client === "string") conn.client = frame.client;
         switch (frame.ch) {
             case "hello": {
                 writeFrame(conn, { v: PROTOCOL_VERSION, ch: "hello", hub: opts.hubInfo });
@@ -235,14 +240,34 @@ export const startUnixSocketServer = (opts: ServerOptions) => {
         }
     };
 
+    /** Push one deliver frame to a connected client (docs/02 §hub.sock: deliver
+     * is the reporter's one inbound mutation — sendUserMessage into the host
+     * session). Addressed by hello client id ("plugin"); targets first by id,
+     * then by opName alias. Result reports whether a live connection got the
+     * frame — never a throw. */
+    const deliverTo = (clientId: string, opName: string, text: string): Result<void, HubError> => {
+        const targets = [...connections].filter((c) => c.client === clientId || c.client === opName);
+        const conn = targets[0];
+        if (!conn) {
+            return { ok: false, error: hubError("unknown-session", `no connected client ${clientId} for session ${opName}`, { retryable: false }) };
+        }
+        try {
+            writeFrame(conn, { v: PROTOCOL_VERSION, ch: "deliver", cmdId: opName, sessionId: opName, text });
+            return ok(undefined);
+        } catch (e) {
+            return { ok: false, error: hubError("unavailable-hub", `deliver write failed: ${(e as Error).message}`, { retryable: true, cause: e }) };
+        }
+    };
+
     const listening = new Promise<void>((resolve) => {
         server.once("listening", () => resolve());
     });
 
-    const start = async (): Promise<Result<{ socketPath: string }, HubError>> => {
+    const start = async (socketPath?: string): Promise<Result<{ socketPath: string }, HubError>> => {
+        const path = socketPath ?? opts.socketPath;
         // stale socket file from a crashed hub is unlinked before listen (docs/05 §Entry)
         try {
-            await unlink(opts.socketPath);
+            await unlink(path);
         } catch (e) {
             const code = (e as NodeJS.ErrnoException).code;
             if (code !== "ENOENT") {
@@ -254,8 +279,8 @@ export const startUnixSocketServer = (opts: ServerOptions) => {
                 resolve({ ok: false, error: hubError("unavailable-hub", `listen failed: ${e.code ?? "error"}`, { retryable: false, cause: e.code }) });
             });
         });
-        server.listen(opts.socketPath);
-        return Promise.race([failed, listening.then(() => ok({ socketPath: opts.socketPath }))]);
+        server.listen(path);
+        return Promise.race([failed, listening.then(() => ok({ socketPath: path }))]);
     };
 
     const close = async (): Promise<void> => {
@@ -269,7 +294,7 @@ export const startUnixSocketServer = (opts: ServerOptions) => {
         }
     };
 
-    return { broadcast, start, close, server };
+    return { broadcast, deliverTo, start, close, server };
 };
 
 export type HubSocketServer = ReturnType<typeof startUnixSocketServer>;
