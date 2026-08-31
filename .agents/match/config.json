@@ -1,0 +1,19 @@
+{
+  "controller": {
+    "mode": "active",
+    "planner": {
+      "enabled": true,
+      "applyMode": "auto_recover"
+    },
+    "launchTimeoutMs": 86400000
+  },
+  "review": {
+    "mode": "worktree"
+  },
+  "workers": {
+    "model": "aihub/aihub/glm-5.3-flash"
+  },
+  "workspace": {
+    "path": "."
+  }
+}
