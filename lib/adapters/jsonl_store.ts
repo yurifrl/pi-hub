@@ -6,7 +6,7 @@
 // per line; on read a trailing line without a newline is discarded (torn tail);
 // files are never rewritten or compacted.
 
-import { open, readFile } from "node:fs/promises";
+import { mkdir, open, readFile } from "node:fs/promises";
 import path from "node:path";
 import { hubError } from "../domain/command";
 import type { HubError, Result } from "../domain/command";
@@ -55,11 +55,12 @@ const matchesLogEntry = (entry: StoredLogEntry, f?: LogFilter): boolean => {
 };
 
 /** Append one line to an append-only file with a single write(2) at O_APPEND.
- * Creates the file (and parents) on first append. The whole serialized line is
- * handed to one writeFile call — a crash may lose the tail of the last line
- * but never corrupts earlier ones. */
+ * Creates the file (and its parent directory) on first append. The whole
+ * serialized line is handed to one writeFile call — a crash may lose the tail
+ * of the last line but never corrupts earlier ones. */
 const appendLine = async (filePath: string, line: unknown): Promise<Result<void, HubError>> => {
     try {
+        await mkdir(path.dirname(filePath), { recursive: true });
         const handle = await open(filePath, "a");
         try {
             await handle.writeFile(JSON.stringify(line) + "\n", "utf8");

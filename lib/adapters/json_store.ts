@@ -37,14 +37,19 @@ const fileError = (message: string, cause: unknown): HubError =>
 const ok = <T>(value: T): Result<T, HubError> => ({ ok: true, value });
 
 /** Read + parse status.json. Tolerant in the forward-compat sense (unknown
- * fields pass through untouched); a missing or torn/invalid file is an error
- * Result, never a throw and never a guessed default. */
-const readStatus = async (dataRoot: string): Promise<Result<StatusFile, HubError>> => {
+ * fields pass through untouched). `updateMode` gates update(): a corrupt file
+ * must never be silently replaced (data loss) — read() reports the error while
+ * update() treats only a *missing* file as the empty skeleton. */
+const readStatus = async (dataRoot: string, updateMode: boolean): Promise<Result<StatusFile, HubError>> => {
   let raw: string;
   try {
     raw = await readFile(statusPath(dataRoot), "utf8");
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" && updateMode) {
+      // boot path: no file yet — the mutation seeds the meta block from scratch
+      return ok(emptyStatus());
+    }
     if (code === "ENOENT") {
       return { ok: false, error: fileError(`no status.json under ${dataRoot}`, e) };
     }
@@ -87,15 +92,15 @@ const atomicWrite = async (dataRoot: string, json: string): Promise<Result<void,
  * read/update/atomic-write mechanics. */
 export const createJsonStore = (dataRoot: string): StatusStore => ({
   async read() {
-    return readStatus(dataRoot);
+    return readStatus(dataRoot, false);
   },
 
   async update(mutate) {
     // Missing file → start from the skeleton so boot can seed the meta block
     // through the same port; corrupt file → hard error (no silent reset).
-    const current = await readStatus(dataRoot);
-    const base = current.ok ? current.value : emptyStatus();
-    const next = mutate(base);
+    const current = await readStatus(dataRoot, true);
+    if (!current.ok) return current;
+    const next = mutate(current.value);
     const written = await atomicWrite(dataRoot, JSON.stringify(next, null, 2) + "\n");
     if (!written.ok) return written;
     return ok(next);
