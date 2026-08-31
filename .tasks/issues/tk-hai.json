@@ -4,14 +4,14 @@
   "id": "tk-hai",
   "title": "extensions: hub.ts entry guard + /hub-start /hub-stop /hub-agent + brain child spawn",
   "description": "",
-  "status": "open",
+  "status": "in_progress",
   "priority": 2,
   "issue_type": "task",
   "owner": null,
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:15.183Z",
-  "updated_at": "2026-08-30T19:06:41.809Z",
+  "updated_at": "2026-08-31T14:57:42.005Z",
   "started_at": null,
   "closed_at": null,
   "due_at": null,
@@ -38,6 +38,14 @@
   ],
   "dependency_count": 1,
   "dependent_count": 1,
-  "comments": [],
-  "comment_count": 0
+  "comments": [
+    {
+      "id": "comment-4e71c1c1-2095-4133-8a1b-c45f3e61a7a9",
+      "issue_id": "tk-hai",
+      "author": "yuri",
+      "text": "Implementation complete on matchday/tk-hai, commit 202dc9f.\n\nWHAT LANDED\n- extensions/hub.ts — the omp extension factory (docs/05 §Entry). Brain guard: OMP_HUB_BRAIN=1 → early-return before any pi.on/registerTool/registerCommand (guard 1; smoke-verified with a recording stub: zero registrations). Registers /hub-start /hub-stop /hub-agent + session_start/session_shutdown widget lifecycle. Widget key exported as WIDGET_KEY = 'omp-hub-stream' (tk-z9a renders into this slot; claimed at session_start + /hub-start, cleared at /hub-stop + shutdown).\n- extensions/hub_env.ts — env boundary: OMP_HUB_SOCK (default ~/.hub/hub.sock, dataRoot derived), OMP_HUB_BRAIN ('1' only), OMP_HUB_MODEL, OMP_BIN (default omp), OMP_HUB_AGENT ('1' only). Accepts an injected env record; lib never reads process.env.\n- extensions/hub_local.ts — the composition hub.ts drives: json_store, jsonl_store, memory_bus, status-backed attention store, timeout scheduler, omp_agent runtime, unix_socket server; injects into hub_core + tk-jwx startWatcher. reportToRaw translates docs/02 reporter frames → RawOmpEvent (unknown frames dropped silently). Overrides seam (runtime/socket/watcher) keeps tests on fakes.\n- extensions/hub.test.ts — 16 tests: brain guard zero-registration; /hub-start binds the real socket (raw client hello→cmd→reply asserted through frames, not sleeps) + brain spawned via injectable AgentRuntime fake; /hub-stop kills children + closes socket + peer rows survive with NO archive dir written (docs/05 §Shutdown); agent toggle spawn/adopt/stop + buildAgentSpec acp/OMP_HUB_AGENT env + guard-5 refusal; env defaults/overrides/env-free-lib; reportToRaw table; widget key contract.\n- lib/runtime/hub_core.ts — hub-side runtime: handleEvent normalize pipeline (log append → single status.json rewrite → bus publish), CommandSurface (list/send/spawn/kill/attention list+dismiss/answer/assign; tool+archive+logTail+summaries refuse for now), spawnBrain/spawnWorker/disposeChildren, self-delivery denial (guard 3).\n- lib/adapters: memory_bus (EventBus), attention_store (over StatusStore; idempotent raise per (session,kind); guard-6 selfId rejection; resolution lines to summaries), timeout_scheduler (Scheduler).\n- lib/adapters/unix_socket.ts: added deliverTo bridge (targets hello client id 'plugin' — the tk-epx seam for inbound deliver frames); start() now takes an optional path for fake parity.\n- lib/package.json: ./runtime/* exports subpath. tsconfig now includes extensions/. Root package.json: pi-coding-agent + pi-tui added to devDependencies (typecheck only; peers stay optional).\n\nSEAMS FOR PARALLEL TASKS (not implemented here by design)\n- tk-epx (reporter): socket onReport → hub_local.handleReport is the inbound frame entry; self-feed = call core.handleEvent directly when hubActive && sessionId === selfSessionId (state.selfSessionId via the factory closure); outbound deliver frames arrive via server.deliverTo('plugin', sessionId, text).\n- tk-z9a (widget render): own the WIDGET_KEY slot via ctx.ui.setWidget; subscribe to the bus the hub core publishes (topic 'log') for render triggers.\n\nVERIFICATION: bun test 352 pass / 0 fail (x3 stable), tsc --noEmit exit 0 (extensions included), lib bun build clean. Leave OPEN for validator.",
+      "created_at": "2026-08-31T14:57:42.005Z"
+    }
+  ],
+  "comment_count": 1
 }
