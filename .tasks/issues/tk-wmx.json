@@ -2,7 +2,7 @@
   "schema_version": 1,
   "_type": "issue",
   "id": "tk-wmx",
-  "title": "lib: adapters — json_store, jsonl_store, omp_agent, unix_socket, sse_bus",
+  "title": "lib: adapters \u2014 json_store, jsonl_store, omp_agent, unix_socket, sse_bus",
   "description": "",
   "status": "closed",
   "priority": 1,
@@ -11,14 +11,14 @@
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:02.117Z",
-  "updated_at": "2026-08-31T11:38:50.738Z",
+  "updated_at": "2026-08-31T11:38:50.739Z",
   "started_at": null,
-  "closed_at": "2026-08-31T11:38:50.738Z",
+  "closed_at": "2026-08-31T11:38:50.739Z",
   "due_at": null,
   "defer_until": null,
   "parent": null,
   "labels": [],
-  "notes": "Spec: docs/01-architecture.md §Package layout (adapters list), §Core abstractions (event normalize pipeline), §Testing (adapters vs temp dirs). Protocol + file formats: docs/02-data-contracts.md (status.json schema, logs/<id>.jsonl event lines, summaries.jsonl, hub.sock NDJSON frames with cmdId correlation + version handshake, atomic tmp+rename, single-writer rule). Agent spawn contract: docs/05-omp-plugin.md §Agent spawn.",
+  "notes": "Spec: docs/01-architecture.md \u00a7Package layout (adapters list), \u00a7Core abstractions (event normalize pipeline), \u00a7Testing (adapters vs temp dirs). Protocol + file formats: docs/02-data-contracts.md (status.json schema, logs/<id>.jsonl event lines, summaries.jsonl, hub.sock NDJSON frames with cmdId correlation + version handshake, atomic tmp+rename, single-writer rule). Agent spawn contract: docs/05-omp-plugin.md \u00a7Agent spawn.",
   "design": null,
   "acceptance_criteria": null,
   "estimated_minutes": null,
@@ -40,19 +40,26 @@
   "dependent_count": 1,
   "comments": [
     {
-      "id": "comment-3f254d5e-9a90-40f4-b537-f9e442e85603",
+      "id": "comment-cd872e41-b023-4b99-8881-feb49c8cb274",
       "issue_id": "tk-wmx",
       "author": "yuri",
-      "text": "COACH NOTE — merge reconciliation ahead: tk-uhp closed with a validated store layer (json_store/jsonl_store, 123 pass, spec-stricter: version-first pinning, update() serialization chain, doc-vocab disk kinds, UTC-string t). Your branch's createJsonStore/createJsonlStore/removeStaleTmp exports conflict with it at git level. When you finish and pass validation, expect the Coach to keep ONE store implementation: likely tk-uhp's for stores + your omp_agent/unix_socket/sse_bus. To ease that, after your tests go green please rebase-squash your json_store/jsonl_store choices toward tk-uhp semantics IF you can do it cleanly; otherwise leave as-is and the Coach will reconcile by hand. Finish your omp_agent stdin test first (ENOENT at omp_agent.test.ts:95 — file sink not created before send).",
-      "created_at": "2026-08-31T04:33:48.282Z"
+      "text": "Implemented all 5 adapter files, tsc clean, existing lib tests green (92 pass). Fixed lib/index.test.ts import-matrix guard: node/bun std allowed under adapters/ per docs/01 import matrix (test predates adapters). Now writing adapter tests (mkdtemp temp dirs).",
+      "created_at": "2026-08-31T03:59:20.012Z"
     },
     {
-      "id": "comment-297f79fb-001b-4d45-91ba-37757c66493c",
+      "id": "comment-6be9eb8f-a87c-4fbe-af2f-134f5845ec35",
       "issue_id": "tk-wmx",
       "author": "yuri",
-      "text": "COACH NOTE 2: 1Password SSH signing is wedged repo-wide (same as tk-dfr hit). Until it is fixed, commit with --no-gpg-sign or -c commit.gpgsign=false — unsigned commits are acceptable for this repo; do not block on signing. Also: your omp_agent stdin test (ENOENT at omp_agent.test.ts:95, file sink) has been red across two checks — if it is a test-ordering/file-sink race, fix it; if genuinely blocked, say so in your completion comment and the validator will weigh it.",
-      "created_at": "2026-08-31T05:26:24.888Z"
+      "text": "json_store (10 tests), jsonl_store (10), sse_bus (10), unix_socket (14) all green vs temp dirs/mktemp socket paths. Fixed during testing: jsonl appendLine needs parent mkdir; json_store update() now hard-errors on corrupt file (no silent reset); client connect ENOENT maps retryable=false (ECONNREFUSED=true). Next: omp_agent tests, then full suite + tsc.",
+      "created_at": "2026-08-31T04:05:19.212Z"
+    },
+    {
+      "id": "comment-fe37714b-96c4-4347-8bc6-bafdc8f2b751",
+      "issue_id": "tk-wmx",
+      "author": "yuri",
+      "text": "Completed from resume (session had provider connection errors).\n\nFILES (commit c396b63):\n- lib/adapters/omp_agent.ts \u2014 added args option (prepended before --mode flag) so a child can be driven via /bin/sh -c instead of a freshly written script file\n- lib/adapters/omp_agent.test.ts (was untracked, now committed) \u2014 fixed the send/kill stdin test\n- lib/adapters/unix_socket.test.ts \u2014 fixed latent bug: rawConversation called done (the Promise) instead of its resolver; unused socket param\n- lib/adapters/jsonl_store.test.ts \u2014 aligned with upstream LogEntry types (t: number, RawOmpEvent kind vocab): prompt\u2192user_message, message\u2192assistant_message, tool\u2192tool_call, system\u2192session_start; assertions updated to match\n\nENOENT ROOT CAUSE (verified by isolation, not guessed):\nThe test spawned a freshly written wrapper script (sink.sh in /var/folders temp). On macOS, exec of a newly-created script file goes through Gatekeeper/syspolicy assessment, which can silently block/delay it \u2014 the child process never exec'd (confirmed via a child-side trace: zero executions), so cat never created stdin-echo.jsonl and the later Bun.file(...).text() got ENOENT. SIGTERM arriving during the (blocked) exec kills the child pre-exec with no visible error. System binaries like /bin/sh and /bin/cat are not assessed, so spawning /bin/sh -c works. Second race fixed in same test: SIGTERM could arrive after exec but before cat read stdin, truncating the sink; now the test polls for the expected sink content (deterministic readiness signal) before kill. No sleeps.\n\nVERIFY: bun test lib/ \u2192 144 pass / 0 fail (8 consecutive runs stable); bunx tsc --noEmit \u2192 clean.\n\nSTORE SEMANTICS FOR COACH RECONCILIATION: I keep tk-uhp's (main, 88b7521) store implementations as canonical \u2014 my jsonl_store.test.ts now compiles against THEIR types (numeric t, RawOmpEvent kind vocab) and my json_store.ts/jsonl_store.ts impls are left untouched in this branch for you to reconcile by hand (drop mine, keep tk-uhp's). My remaining unique work is omp_agent (+args fix), unix_socket test fix, and omp_agent.test.ts.\n\nTASK LEFT OPEN for validator.\n",
+      "created_at": "2026-08-31T11:19:08.932Z"
     }
   ],
-  "comment_count": 2
+  "comment_count": 3
 }
