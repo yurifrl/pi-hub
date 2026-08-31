@@ -25,7 +25,7 @@ export type ClassifierSessionState = {
 /** Idle conditions clear on the next event from the session (docs/06). */
 const clearable: Phase[] = ["idle", "waiting", "blocked"];
 
-const words = (text: string): string => text.trim().split(/\s+/).filter(Boolean);
+const words = (text: string): string[] => text.trim().split(/\s+/).filter(Boolean);
 
 const tail = (text: string, maxWords: number): string => {
   const w = words(text);
