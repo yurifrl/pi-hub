@@ -1,3 +1,5 @@
 {"issue_id":"tk-nbw","action":"save","at":"2026-08-30T18:55:45.923Z","actor":null,"data":{"status":"open","title":"web: session detail + archive flavor + agent surface page"}}
 {"issue_id":"tk-nbw","action":"comment","at":"2026-08-30T19:04:13.005Z","actor":"yuri","data":{"text":"Spec: docs/04-web.md Session detail (full log via status.json log link not embedded, phase timeline with phaseHistory fallback, tool bars, pinned send box, 409 rule for archived sessions) and archive flavor (closed badge, close date, final summary pinned). Agent page: docs/04 Agent page (surface registry, pending surface, unknown id generic card) plus docs/06 agentSurface contract."}}
 {"issue_id":"tk-nbw","action":"dependency_added","at":"2026-08-30T19:06:08.567Z","actor":"yuri","data":{"target":"tk-swx","type":"blocks"}}
+{"issue_id":"tk-nbw","action":"comment","at":"2026-08-31T12:31:20.026Z","actor":"yuri","data":{"text":"starting: web session detail + archive flavor + agent surface page (tk-nbw worker)"}}
+{"issue_id":"tk-nbw","action":"save","at":"2026-08-31T12:33:04.837Z","actor":null,"data":{"status":"in-progress","title":"web: session detail + archive flavor + agent surface page"}}
