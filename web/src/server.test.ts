@@ -153,7 +153,7 @@ describe("GET /api/status", () => {
     const res = await fetch(url("/api/status"));
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/json");
-    const body = await res.json();
+    const body: any = await res.json();
     expect(body.v).toBe(1);
     expect(body.digest).toBe("tilt needs approval · deploy canary 2/3 · docs idle 12m");
     expect(body.attention.map((a: { id: string }) => a.id)).toEqual(["att-1", "att-2"]);
@@ -164,7 +164,7 @@ describe("GET /api/status", () => {
     const raw = await readStatus();
     writeFileSync(join(dataRoot, "status.json"), JSON.stringify({ ...raw, digest: undefined }));
     const res = await fetch(url("/api/status"));
-    const body = await res.json();
+    const body: any = await res.json();
     expect(body.digest).toBe("2 need you · 2 running · 1 idle");
     // restore
     writeFileSync(join(dataRoot, "status.json"), JSON.stringify(raw));
@@ -248,7 +248,7 @@ describe("malformed and missing bodies", () => {
       body: "{nope",
     });
     expect(res.status).toBe(400);
-    const body = await res.json();
+    const body: any = await res.json();
     expect(body.error).toBeDefined();
   });
 
