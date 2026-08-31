@@ -23,6 +23,11 @@ export type AgentFlavor = "rpc" | "acp";
 export type OmpAgentOptions = {
     /** binary to spawn (e.g. "/usr/local/bin/omp"); resolved by the host */
     bin: string;
+    /** extra args prepended before `--mode` (e.g. ["-c", script] to run a
+     * command instead of a script file; launching freshly written script
+     * files is avoided because macOS Gatekeeper assessment can silently
+     * block their exec) */
+    args?: string[];
     /** default model spec handed to children without an explicit one */
     model?: string;
     /** child mode: "rpc" for brain/worker, "acp" for the hub agent */
@@ -56,7 +61,7 @@ export const createOmpAgentRuntime = (opts: OmpAgentOptions): AgentRuntime => {
             ...(flavor === "rpc" ? { OMP_HUB_BRAIN: "1" } : { OMP_HUB_AGENT: "1" }),
         };
         try {
-            const proc = spawn(opts.bin, ["--mode", flavor], {
+            const proc = spawn(opts.bin, [...(opts.args ?? []), "--mode", flavor], {
                 env,
                 cwd: opts.cwd,
                 stdio: ["pipe", "pipe", "pipe"],

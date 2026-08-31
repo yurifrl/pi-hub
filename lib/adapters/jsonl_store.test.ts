@@ -64,7 +64,7 @@ describe("jsonl_store — log append/replay (docs/02 ## logs)", () => {
         const root = await makeRoot();
         const store = createJsonlStore(root);
         for (const i of [1, 2]) {
-            const r = await store.appendLog({ t: `2026-08-30T18:0${i}:00.000Z`, sessionId: "s-9f2c", kind: "message", text: `msg ${i}` });
+            const r = await store.appendLog({ t: 1_800_000 + i, sessionId: "s-9f2c", kind: "user_message", text: `msg ${i}` });
             expect(r.ok).toBe(true);
         }
         const replay = await store.replayLog("s-9f2c");
@@ -72,7 +72,7 @@ describe("jsonl_store — log append/replay (docs/02 ## logs)", () => {
         if (replay.ok) {
             expect(replay.value).toHaveLength(2);
             expect(replay.value[0]?.text).toBe("msg 1");
-            expect(replay.value[1]?.kind).toBe("message");
+            expect(replay.value[1]?.kind).toBe("user_message");
             expect(replay.value[0]?.sessionId).toBe("s-9f2c"); // denormalized: self-contained lines
         }
     });
@@ -81,7 +81,7 @@ describe("jsonl_store — log append/replay (docs/02 ## logs)", () => {
         const root = await makeRoot();
         const store = createJsonlStore(root);
         for (const i of [1, 2, 3, 4]) {
-            await store.appendLog({ t: `t${i}`, sessionId: "s-x", kind: "prompt", text: `p${i}` });
+            await store.appendLog({ t: i, sessionId: "s-x", kind: "user_message", text: `p${i}` });
         }
         const tail = await store.tailLog("s-x", 2);
         expect(tail.ok).toBe(true);
@@ -91,10 +91,10 @@ describe("jsonl_store — log append/replay (docs/02 ## logs)", () => {
     it("tailLog filter narrows by kind and text before slicing", async () => {
         const root = await makeRoot();
         const store = createJsonlStore(root);
-        await store.appendLog({ t: "t1", sessionId: "s-x", kind: "tool", text: "ran bun test", meta: { tool: "bash" } });
-        await store.appendLog({ t: "t2", sessionId: "s-x", kind: "message", text: "hello" });
-        await store.appendLog({ t: "t3", sessionId: "s-x", kind: "tool", text: "ran bun build" });
-        const tail = await store.tailLog("s-x", 1, { kind: ["tool"] });
+        await store.appendLog({ t: 1, sessionId: "s-x", kind: "tool_call", text: "ran bun test", meta: { tool: "bash" } });
+        await store.appendLog({ t: 2, sessionId: "s-x", kind: "assistant_message", text: "hello" });
+        await store.appendLog({ t: 3, sessionId: "s-x", kind: "tool_call", text: "ran bun build" });
+        const tail = await store.tailLog("s-x", 1, { kind: ["tool_call"] });
         if (tail.ok) expect(tail.value.map((e) => e.text)).toEqual(["ran bun build"]);
         const texts = await store.tailLog("s-x", 5, { text: "BUN" }); // case-insensitive
         if (texts.ok) expect(texts.value).toHaveLength(2);
@@ -109,8 +109,8 @@ describe("jsonl_store — log append/replay (docs/02 ## logs)", () => {
     it("torn tail (last line without newline) is discarded on read; earlier lines survive", async () => {
         const root = await makeRoot();
         const store = createJsonlStore(root);
-        await store.appendLog({ t: "t1", sessionId: "s-torn", kind: "system", text: "session_start" });
-        await store.appendLog({ t: "t2", sessionId: "s-torn", kind: "prompt", text: "complete line" });
+        await store.appendLog({ t: 1, sessionId: "s-torn", kind: "session_start", text: "session_start" });
+        await store.appendLog({ t: 2, sessionId: "s-torn", kind: "user_message", text: "complete line" });
         // simulate a crash mid-append: partial JSON, no trailing newline
         await Bun.write(join(root, "logs", "s-torn.jsonl"), (await Bun.file(join(root, "logs", "s-torn.jsonl")).text()) + '{"t":"t3","session');
         const replay = await store.replayLog("s-torn");
@@ -127,10 +127,10 @@ describe("jsonl_store — log append/replay (docs/02 ## logs)", () => {
     it("append after a torn tail: O_APPEND keeps bytes, the merged line is skipped on read, complete lines survive", async () => {
         const root = await makeRoot();
         const store = createJsonlStore(root);
-        await store.appendLog({ t: "t1", sessionId: "s-t2", kind: "system", text: "start" });
+        await store.appendLog({ t: 1, sessionId: "s-t2", kind: "session_start", text: "start" });
         const p = join(root, "logs", "s-t2.jsonl");
         await Bun.write(p, (await Bun.file(p).text()) + '{"t":"t2","sess'); // torn
-        const r = await store.appendLog({ t: "t3", sessionId: "s-t2", kind: "message", text: "after tear" });
+        const r = await store.appendLog({ t: 3, sessionId: "s-t2", kind: "assistant_message", text: "after tear" });
         expect(r.ok).toBe(true);
         // O_APPEND semantics: the new line glued onto the torn fragment (the
         // merged line is invalid JSON and is skipped on read forever; the

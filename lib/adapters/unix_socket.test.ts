@@ -51,7 +51,7 @@ const rawConversation = async (
     const sock = Bun.connect({
         unix: path,
         socket: {
-            data(socket, data) {
+            data(_socket, data) {
                 received.push(data.toString("utf8"));
                 check();
             },
@@ -61,6 +61,10 @@ const rawConversation = async (
     });
     const received: string[] = [];
     let out: Record<string, unknown>[] = [];
+    let resolveDone: () => void = () => {};
+    const done = new Promise<void>((r) => {
+        resolveDone = r;
+    });
     const check = () => {
         const all = received.join("");
         const lines = all.split("\n").filter((l) => l.length > 0);
@@ -71,12 +75,8 @@ const rawConversation = async (
                 return { ch: "unparseable" };
             }
         });
-        if (out.length >= want) done();
+        if (out.length >= want) resolveDone();
     };
-    let resolveDone: () => void = () => {};
-    const done = new Promise<void>((r) => {
-        resolveDone = r;
-    });
     const timer = setTimeout(resolveDone, timeoutMs);
     void (async () => {
         const s = await sock;
