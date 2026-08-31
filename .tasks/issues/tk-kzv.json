@@ -11,7 +11,7 @@
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:56:08.096Z",
-  "updated_at": "2026-08-31T20:22:34.402Z",
+  "updated_at": "2026-08-31T22:07:18.018Z",
   "started_at": null,
   "closed_at": null,
   "due_at": null,
@@ -53,7 +53,14 @@
       "author": "yuri",
       "text": "Spec: docs/01-architecture.md Testing (one e2e: two fake sessions over unix socket exercising prompt tool result relay). Frame protocol: docs/02-data-contracts.md hub.sock. Acceptance mirrors the shipped hub.ts chain verified earlier (echo round-trip exit 0).",
       "created_at": "2026-08-30T19:05:04.255Z"
+    },
+    {
+      "id": "comment-3d62ddf8-dd10-4c8e-83e8-6edf3dcabc07",
+      "issue_id": "tk-kzv",
+      "author": "yuri",
+      "text": "e2e shipped: tests/e2e.test.ts - the one docs/01 Testing e2e. Real composition root (hub_local: json_store, jsonl_store, memory_bus, status attention store, watcher, unix_socket) over temp data root + real unix socket; two scripted fake peer sessions on raw sockets speaking docs/02 frames (hello, report, cmd/reply); fake AgentRuntime only behind the brain spawn.\n\nSpine verified (56 assertions): session_start upserts both peers (kind/status/phase/model/title/log/toolCounts) - send op delivers prompt - fake runtime answers - turns + durable logs reflect it, cross-direction relay + title fill - tool_call reports raise approval AttentionItem (att-n, waiting phase, toolCounts bump) - answer op resolves (delivered, by cli, resolvedAt/answer set) - kind resolution line in summaries.jsonl - status.json read back from disk proves atomic rewrite (pid, no tmp left). Pinned docs/02 envelopes: tool op denied (not yet served - relay legs exercised above), kill peer unknown-session (worker-only today, consent flow with archive tasks). Hue derived per session id. sessionId-addressed deliver routing (tk-epx) asserted.\n\ntk-l4a interplay: selfSessionId resolves empty string in this wiring - guard-2 inert; both fakes use distinct session ids, self-feed not load-bearing - noted in file header.\n\nEvidence: e2e stable x5 runs (0 fails), full workspace bun test 646 pass / 0 fail across 42 files, tsc --noEmit exit 0. Commit 4f6f12a pushed to origin matchday/tk-kzv. Leaving OPEN per task.",
+      "created_at": "2026-08-31T22:07:18.018Z"
     }
   ],
-  "comment_count": 1
+  "comment_count": 2
 }
