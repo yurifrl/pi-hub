@@ -4,8 +4,10 @@
 // connections on stop(). No auth in v1 (deliberate local-only tradeoff).
 
 import { TOKEN_HEX } from "@yurifrl/hub";
+import { createSseBus } from "@yurifrl/hub/adapters/sse_bus";
 import { route, type RouteHandlers } from "./routes/table";
 import { buildSnapshot } from "./snapshot";
+import { sseEventsFor } from "./sse";
 import type { HubWebDeps, HubWebTheme, SseConn } from "./types";
 
 /** Default port (docs/04-web.md §Server; final default owned by 03-cli). */
@@ -16,12 +18,19 @@ const resolveTheme = (override?: HubWebTheme): HubWebTheme => ({ ...TOKEN_HEX, .
 export const startHubWeb = async (deps: HubWebDeps): Promise<{ stop(): Promise<void>; port: number }> => {
   const theme = resolveTheme(deps.theme);
   const sseConns = new Set<SseConn>();
+  // the delta side of /stream (docs/04 §SSE contract); web is the transport
+  // host, the sse_bus adapter is the numbered-ring + replay mechanism
+  const bus = createSseBus();
 
-  // Lifecycle: subscribe to the bus on start; unsubscribe on stop(). The web
-  // surface never publishes state (docs/01 import matrix; docs/04 §Server).
-  const unsubscribe = deps.bus.subscribe((_evt) => {
-    // Delta fan-out over /stream (attention/log/summary/phase events) is
-    // tk-szb's endpoint contract; this task ships the snapshot-only stub.
+  // Lifecycle: subscribe to the hub event bus on start; unsubscribe on stop().
+  // The web surface never publishes state (docs/01 import matrix). Each
+  // committed hub event becomes the smallest-describing /stream delta (docs/04
+  // §SSE contract); snapshot-material events are dropped here and covered by
+  // the fresh snapshot every connect/reconnect serves.
+  const unsubscribe = deps.bus.subscribe((evt) => {
+    for (const sse of sseEventsFor(evt)) {
+      bus.publish({ topic: sse.event, payload: sse.payload });
+    }
   });
 
   const handlers: RouteHandlers = {
@@ -54,7 +63,7 @@ export const startHubWeb = async (deps: HubWebDeps): Promise<{ stop(): Promise<v
     port: deps.port ?? DEFAULT_WEB_PORT,
     async fetch(req) {
       const url = new URL(req.url);
-      return route(req.method, url.pathname, { theme, sseConns }, handlers, req);
+      return route(req.method, url.pathname, { theme, bus, sseConns }, handlers, req);
     },
   });
 
@@ -64,6 +73,9 @@ export const startHubWeb = async (deps: HubWebDeps): Promise<{ stop(): Promise<v
       unsubscribe();
       for (const conn of sseConns) conn.close();
       sseConns.clear();
+      // yield one tick so the closed streams flush their FIN before the
+      // forced stop resets any straggler socket (graceful close, then sweep)
+      await new Promise((resolve) => setTimeout(resolve, 0));
       server.stop(true);
     },
   };
