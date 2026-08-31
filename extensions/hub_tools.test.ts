@@ -69,6 +69,7 @@ const makeConnect = (script: Array<{ ok: boolean; result?: unknown; error?: HubE
     let closed = 0;
     const client: HubClient = {
         report: () => ({ ok: true, value: undefined }),
+        onClose: () => {},
         cmd: (op, args = {}, deadlineMs = 30_000) => {
             sent.push({ op, args, timeoutMs: deadlineMs });
             const step = script[Math.min(i, script.length - 1)]!;

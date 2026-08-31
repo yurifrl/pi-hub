@@ -8,13 +8,13 @@
 // before ANY registration; /hub-start inside the hub agent is refused (guard
 // 5); the self-feed guard (2) lives in the reporter seam this file exposes
 // via selfSessionId + handleLocalFrame (tk-epx consumes them).
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveHubEnv } from "./hub_env";
 import type { HubEnv } from "./hub_env";
 import { createHubLocal } from "./hub_local";
 import type { HubLocal } from "./hub_local";
 import { createHubTools } from "./hub_tools";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { createReporter } from "./hub_reporter";
 import type { AgentRuntime } from "@yurifrl/hub";
 
 /** The widget key — the stable contract with omp's UI (docs/05 §Widget).
@@ -122,7 +122,10 @@ export const buildAgentSpec = (env: HubEnv): { name: string; bin: string; args: 
     return { name: "hub-watcher", bin: env.ompBin, args: ["--mode", "acp"], env: childEnv };
 };
 
-export default function hub(pi: ExtensionAPI): void {
+/** The extension body, parameterized for tests (docs/01 §Testing: injectable
+ * edges). `connect` replaces the real hub.sock client factory so order tests
+ * run hermetically; production callers use the default export. */
+export const createHubExtension = (injections?: { connect?: Parameters<typeof createReporter>[0]["connect"] }) => (pi: ExtensionAPI): void => {
     const env = resolveHubEnv();
 
     // ---- brain guard (docs/05 §Anti-recursion guard 1) ----
@@ -130,6 +133,10 @@ export default function hub(pi: ExtensionAPI): void {
     // contribute RPC answers only: return BEFORE any pi.on / registerTool /
     // registerCommand call. This early-return IS the first and hardest guard.
     if (env.brain) return;
+
+    /** The most recent ExtensionContext — the session-identity source for the
+     * reporter (sessionId/title/cwd/model live here, not in events). */
+    let lastCtx: ExtensionContext | undefined;
 
     const state: HubState = {
         active: false,
@@ -147,12 +154,66 @@ export default function hub(pi: ExtensionAPI): void {
         pi.registerTool(tool);
     }
 
-    // Widget slot claimed up front (docs/05 §Entry step 1); the RENDER is
+    // ---- reporter (docs/05 §Reporter) ----
+    // One reporter instance per process. It owns the event→frame translation,
+    // the reconnecting socket with attach-on-connect, and the self-feed
+    // decision: hubActive && sessionId === selfSessionId → the local hub
+    // handler directly, never the socket (docs/05 §Anti-recursion guard 2).
+    // Everything it needs is resolved HERE at the boundary (hub_env.ts seam).
+    const reporter = createReporter({
+        env,
+        agent: env.hubAgent,
+        local: {
+            isActive: () => state.active,
+            selfSessionId: () => state.selfSessionId,
+            // the hub's own frames enter the pipeline exactly like a peer's:
+            // reportToRaw + core.handleEvent (tk-hai seam)
+            handleReport: (frame) => state.local?.handleReport(frame as never),
+        },
+        // session identity resolved at the boundary (docs/01: hosts parse,
+        // lib decides). The session manager's id is the omp session id.
+        sessionFacts: () => {
+            const ctx = lastCtx;
+            return {
+                sessionId: ctx?.sessionManager.getSessionId() ?? "",
+                title: ctx?.sessionManager.getSessionName() ?? "",
+                cwd: ctx?.cwd ?? process.cwd(),
+                model: ctx?.model?.id ?? "",
+            };
+        },
+        // the reporter's one inbound mutation of the host session (docs/05
+        // §Reporter: inbound frames handled by the reporter, exactly two —
+        // deliver resolves here; reply wires arrive with the tk-sj9 cmd client)
+        sendUserMessage: (text) => {
+            // sendUserMessage lives on the ExtensionAPI; the API surface does
+            // not need a ctx — fire and walk away, never throws into the host
+            try {
+                pi.sendUserMessage(text);
+            } catch {
+                /* host session gone; the hub already got the write result */
+            }
+        },
+        ...(injections?.connect ? { connect: injections.connect } : {}),
+    });
+
+    // ---- session_start: ctx capture BEFORE the reporter (tk-epx P0) ----
+    // pi dispatches same-extension handlers in REGISTRATION ORDER with ONE
+    // shared ExtensionContext, and SessionStartEvent carries no sessionId —
+    // identity is only reachable via ctx. This handler must therefore run
+    // BEFORE the reporter's session_start handler (registered by
+    // reporter.register below), or the first session_start of every real
+    // process resolves sessionFacts against an undefined lastCtx: sessionId
+    // "", no connect, dead frames.
+    // It also claims the widget slot (docs/05 §Entry step 1); the RENDER is
     // tk-z9a's — it consumes the subscription surface registered below and
-    // paints through this same key. Cleared on /hub-stop and shutdown.
+    // paints through this same key. Cleared on /hub-stop and shutdown. The
+    // two concerns are independent; pi supports multiple listeners.
     pi.on("session_start", (_event, ctx: ExtensionContext) => {
+        lastCtx = ctx;
         if (!state.active) ctx.ui.setWidget(WIDGET_KEY, ["hub idle — /hub-start to serve"]);
     });
+
+    reporter.register(pi);
 
     // ---- /hub-start ----
     pi.registerCommand("hub-start", {
@@ -205,4 +266,9 @@ export default function hub(pi: ExtensionAPI): void {
             clear();
         }
     });
+};
+
+/** The omp entry point (docs/05 §Entry): production factory, no injections. */
+export default function hub(pi: ExtensionAPI): void {
+    createHubExtension()(pi);
 }
