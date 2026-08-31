@@ -11,7 +11,7 @@
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:46.218Z",
-  "updated_at": "2026-08-31T12:01:00.000Z",
+  "updated_at": "2026-08-31T12:42:04.423Z",
   "started_at": null,
   "closed_at": "2026-08-31T12:01:00.000Z",
   "due_at": null,
@@ -57,15 +57,15 @@
       "id": "comment-4e713a86-2f68-4080-b619-0f898f2cee23",
       "issue_id": "tk-jwx",
       "author": "yuri",
-      "created_at": "2026-08-31T05:35:00.000Z",
-      "text": "COACH ACTION — 1Password SSH signing agent wedged repo-wide (same failure as tk-dfr hit); committed your staged watcher tests as 690a0b0 with commit.gpgsign=false. Verified: bun test lib/ 118 pass 0 fail, tsc 0. Validator spawned. Note for all workers until 1P is restarted: use --no-gpg-sign or ask the Coach."
+      "text": "COACH ACTION — 1Password SSH signing agent wedged repo-wide (same failure as tk-dfr hit); committed your staged watcher tests as 690a0b0 with commit.gpgsign=false. Verified: bun test lib/ 118 pass 0 fail, tsc 0. Validator spawned. Note for all workers until 1P is restarted: use --no-gpg-sign or ask the Coach.",
+      "created_at": "2026-08-31T05:35:00.000Z"
     },
     {
       "id": "comment-coach-jwx-recheck",
       "issue_id": "tk-jwx",
       "author": "yuri",
-      "created_at": "2026-08-31T12:01:00.000Z",
-      "text": "VERIFIED PASS (Coach record, recheck round 2): validator used mutation testing — disabled each fix individually, confirmed the corresponding behavior test fails, restored clean. P1 self-idle: isSelf skip at checkIdle source, no remaining path. P2a transition resolution exactly-once via phases mirror. P2b stop() real unsubscribe + timer cleanup, double-stop safe. P3a openKinds from append-ordered array. P3b zero process.env reads in lib. 125/125 x3 stable, tsc 0. All prior acceptance (idempotent re-raise, agent-self exclusion, catch-up w/o replay, bounded backoff, spawn spec) holds. Non-blocking note: stop()'s flushTimer-cancel line not independently test-isolated (unsub assert dominates)."
+      "text": "VERIFIED PASS (Coach record, recheck round 2): validator used mutation testing — disabled each fix individually, confirmed the corresponding behavior test fails, restored clean. P1 self-idle: isSelf skip at checkIdle source, no remaining path. P2a transition resolution exactly-once via phases mirror. P2b stop() real unsubscribe + timer cleanup, double-stop safe. P3a openKinds from append-ordered array. P3b zero process.env reads in lib. 125/125 x3 stable, tsc 0. All prior acceptance (idempotent re-raise, agent-self exclusion, catch-up w/o replay, bounded backoff, spawn spec) holds. Non-blocking note: stop()'s flushTimer-cancel line not independently test-isolated (unsub assert dominates).",
+      "created_at": "2026-08-31T12:01:00.000Z"
     }
   ],
   "comment_count": 4
