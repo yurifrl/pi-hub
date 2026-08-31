@@ -4,6 +4,7 @@
 // Pure routing over injected state + handlers; no I/O here.
 
 import type { HubError, SummaryLine } from "@yurifrl/hub";
+import { formatSse, type SseBus, type SseMessage } from "@yurifrl/hub/adapters/sse_bus";
 import { CSP, agentPage, archivedSessionPage, archivePage, consolePage, sessionNotFoundPage, sessionPage } from "../html";
 import type { HubWebTheme, SseConn, SnapshotPayload } from "../types";
 
@@ -26,6 +27,8 @@ export type RouteHandlers = {
 
 export type RouteEnv = {
   theme: HubWebTheme;
+  /** delta replay + live fan-out for /stream (docs/04 §SSE contract) */
+  bus: SseBus;
   /** open SSE connections, closed on server stop() */
   sseConns: Set<SseConn>;
 };
@@ -50,52 +53,95 @@ const ok = (): Response => json({ ok: true }, 200);
 const errorJson = (err: HubError): Response =>
   json({ error: err.message }, err.code === "unknown-session" ? 404 : err.code === "denied" ? 409 : 502);
 
-/** Stub /stream: SSE headers + an initial snapshot event + delta fan-out
- * (docs/04 §SSE contract). `conn.push` is the write side the server's bus
- * subscription calls; payloads arrive already shaped per the contract. */
-const streamResponse = (snapshot: SnapshotPayload, conns: Set<SseConn>): Response => {
+/** What a connection needs to serve `GET /stream` (docs/04 §SSE contract):
+ * delta replay + live fan-out from the bus adapter, and the open-connection
+ * registry so stop() can close every stream. */
+export type StreamContext = {
+  bus: SseBus;
+  /** open SSE connections, closed on server stop() */
+  conns: Set<SseConn>;
+};
+
+const SSE_HEADERS = {
+  "content-type": "text/event-stream",
+  "cache-control": "no-cache",
+  connection: "keep-alive",
+};
+
+/** The snapshot provider the stream reads state from at connect/reconnect. */
+type SnapshotHandler = () => Promise<SnapshotPayload>;
+
+/**
+ * `GET /stream` — one logical SSE channel (docs/04-web.md §SSE contract).
+ * First event is always a fresh `snapshot`. A `Last-Event-ID` reattach gets
+ * the ring replay (deltas keep their original ids) followed by a fresh
+ * snapshot; a reattach that missed beyond the ring, sent no id, or sent a
+ * garbage id gets the snapshot only — designed degrade (docs/04 §Reconnect
+ * semantics). Deltas are idempotent: keyed by item id / session id, so
+ * re-applying is safe. Snapshot events are unnumbered, so the client's
+ * Last-Event-ID never lands on a snapshot and re-delivery stays idempotent.
+ */
+const streamResponse = (request: Request, stream: StreamContext, snapshot: SnapshotHandler): Response => {
   const encoder = new TextEncoder();
-  let closed = false;
-  let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
-  let seq = 0;
+  let unsubscribe: (() => void) | null = null;
   const conn: SseConn = {
     close: () => {
-      if (closed) return;
-      closed = true;
-      try {
-        controllerRef?.close();
-      } catch {
-        // already closed
-      }
-    },
-    push: (event, data) => {
-      if (closed || !controllerRef) return;
-      try {
-        controllerRef.enqueue(encoder.encode(`id: ${seq++}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-      } catch {
-        closed = true;
-        conns.delete(conn);
-      }
+      unsubscribe?.();
+      unsubscribe = null;
     },
   };
   const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controllerRef = controller;
-      conn.push!("snapshot", snapshot);
-      conns.add(conn);
+    async start(controller) {
+      let closed = false;
+      const close = (): void => {
+        if (closed) return;
+        closed = true;
+        try {
+          controller.close();
+        } catch {
+          // already closed by cancel/teardown
+        }
+      };
+      conn.close = () => {
+        close();
+        unsubscribe?.();
+        unsubscribe = null;
+      };
+      const send = (m: SseMessage): void => {
+        controller.enqueue(encoder.encode(formatSse(m)));
+      };
+      try {
+        // EventSource sends the last seen id as a header; a raw reconnect may
+        // pass it as a query param instead — both are honored.
+        const lastId =
+          request.headers.get("last-event-id") ?? new URL(request.url).searchParams.get("lastEventId") ?? undefined;
+        for (const m of stream.bus.replay(lastId)) send(m);
+        // fresh snapshot after the replay — or alone on a degraded reattach
+        send({ event: "snapshot", data: JSON.stringify(await snapshot()) });
+      } catch {
+        // snapshot read failed before the stream could be established
+        controller.close();
+        return;
+      }
+      unsubscribe = stream.bus.onMessage((m) => {
+        try {
+          send(m);
+        } catch {
+          // consumer gone: prune + stop delivering
+          stream.conns.delete(conn);
+          conn.close();
+        }
+      });
+      stream.conns.add(conn);
     },
     cancel() {
-      closed = true;
-      conns.delete(conn);
+      stream.conns.delete(conn);
+      unsubscribe?.();
+      unsubscribe = null;
+      conn.close = () => {}; // idempotent no-op after cancel
     },
   });
-  return new Response(body, {
-    headers: {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache",
-      connection: "keep-alive",
-    },
-  });
+  return new Response(body, { headers: SSE_HEADERS });
 };
 
 const notFound = (what: string): Response => json({ error: what }, 404);
@@ -186,7 +232,7 @@ export const route = async (
   }
 
   if (method === "GET" && pathname === "/stream") {
-    return streamResponse(await h.snapshot(), env.sseConns);
+    return streamResponse(request, { bus: env.bus, conns: env.sseConns }, h.snapshot);
   }
 
   // method mismatch on a known path → 405 with Allow (sensible mismatch behavior)

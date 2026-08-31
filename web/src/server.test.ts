@@ -342,21 +342,23 @@ describe("GET /stream", () => {
       const reader = res.body!.getReader();
       await reader.read(); // drain the initial snapshot chunk
       const sub = subscribers.at(-1)!;
-      // publish deltas as the hub would (docs/04 §SSE contract shapes); the
-      // phase payload rides on the status topic — topic→event naming is the
-      // /stream endpoint's concern (tk-szb); this task pins transport + shape
-      sub({ topic: "attention", payload: { op: "raised", item: { id: "att-9", sessionId: "tilt", kind: "question", text: "ping?", createdAt: new Date(0).toISOString() } } });
-      sub({ topic: "log", payload: { sessionId: "tilt", hue: 42, entry: { t: 1, kind: "message", text: "hello" } } });
+      // publish deltas as the hub would (docs/04 §SSE contract shapes):
+      // topic→event naming is the /stream endpoint's concern (tk-szb); this
+      // task pins transport + shape. `phase` is its own topic (docs/02);
+      // `status` events are snapshot material — the transport drops them by
+      // design (fresh snapshot on connect/reconnect covers them).
+      sub({ topic: "attention", payload: { id: "att-9", sessionId: "tilt", kind: "question", text: "ping?", createdAt: new Date(0).toISOString() } });
+      sub({ topic: "log", payload: { sessionId: "tilt", t: 1, kind: "user_message", text: "hello" } });
       sub({ topic: "summary", payload: { t: new Date(0).toISOString(), sessionId: "tilt", kind: "summary", text: "cycle done", by: "agent" } });
-      sub({ topic: "status", payload: { sessionId: "tilt", phase: "working", at: new Date(0).toISOString() } });
+      sub({ topic: "phase", payload: { sessionId: "tilt", phase: "working", at: new Date(0).toISOString() } });
       const { value } = await reader.read();
       const text = new TextDecoder().decode(value!);
       expect(text).toContain("event: attention");
       expect(text).toContain("\"op\":\"raised\"");
       expect(text).toContain("event: log");
-      expect(text).toContain("\"hue\":42");
+      expect(text).toContain("\"hue\":54"); // hue precomputed server-side from "tilt"
       expect(text).toContain("event: summary");
-      expect(text).toContain("event: status");
+      expect(text).toContain("event: phase");
       expect(text).toContain("\"phase\":\"working\"");
       await reader.cancel();
     } finally {

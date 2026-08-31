@@ -2,7 +2,7 @@
   "schema_version": 1,
   "_type": "issue",
   "id": "tk-szb",
-  "title": "web: SSE stream endpoint — snapshot/attention/log/summary/phase events, Last-Event-ID reconnect",
+  "title": "web: SSE stream endpoint \u2014 snapshot/attention/log/summary/phase events, Last-Event-ID reconnect",
   "description": "",
   "status": "closed",
   "priority": 2,
@@ -45,7 +45,21 @@
       "author": "yuri",
       "text": "Spec: docs/04-web.md SSE contract (event names snapshot attention log summary phase plus payload shapes, Last-Event-ID reconnect with snapshot refresh, log events flow for every open session), Client state (last snapshot plus deltas). sse_bus adapter: docs/01-architecture.md adapters. Frames source: docs/02 hub.sock and EventBus port.",
       "created_at": "2026-08-30T19:04:12.338Z"
+    },
+    {
+      "id": "comment-175e0aa5-4732-4a5f-ad01-23cf0b889aaf",
+      "issue_id": "tk-szb",
+      "author": "yuri",
+      "text": "WIP progress: sse_bus reworked into host-fed delta transport (numbered ring, gap-aware Last-Event-ID replay); domain adds phase topic; web /stream wired \u2014 snapshot first, deltas (attention/log/summary/phase) with precomputed hue, reconnect replay + fresh snapshot, missed-beyond-ring degrade to snapshot-only, stop() closes streams. 234 tests pass, tsc clean.",
+      "created_at": "2026-08-31T11:43:56.491Z"
+    },
+    {
+      "id": "comment-3dd5ae97-70f9-4b02-aab5-9260b3b44758",
+      "issue_id": "tk-szb",
+      "author": "yuri",
+      "text": "FINAL: tk-szb complete. (1) lib/adapters/sse_bus.ts \u2014 host-fed delta transport: monotonic ids, 256-ring, per-connection fan-out, gap-aware replay (missed-beyond-ring/garbage/future/no-id \u2192 [] \u2192 snapshot-only degrade), formatSse supports unnumbered snapshot frames. (2) domain: HubEventTopic += phase (mirrors docs/02 event frames). (3) web/src/sse.ts \u2014 topic\u2192delta vocabulary: log carries precomputed sessionHue, attention op=raised/resolved from resolvedAt, strict payload validation (malformed dropped, never fabricated). (4) routes/table.ts streamResponse: first event fresh snapshot (=GET /api/status shape), Last-Event-ID header or lastEventId query param \u2192 ring replay with original ids + fresh snapshot, snapshots unnumbered so replay idempotent, broken consumers pruned, snapshot-read failure closes stream. (5) server.ts: subscribes bus on start, maps hub events via sseEventsFor, stop() unsubscribes + closes all streams gracefully then sweeps. Acceptance: workspace bun test 234 pass/0 fail incl. 13 sse_bus + 12 /stream HTTP tests (content-type, first-snapshot, all delta shapes + hue range, in-ring replay, ring-overflow degrade, garbage-id degrade, stop() close verified via pending read resolving done); tsc clean; web pkg 33 pass. 3 commits on matchday/tk-szb. NOT closed \u2014 validator to review.",
+      "created_at": "2026-08-31T11:44:29.568Z"
     }
   ],
-  "comment_count": 1
+  "comment_count": 3
 }

@@ -94,8 +94,12 @@ export type LogEntry = {
   meta?: Record<string, unknown>;
 };
 
-/** HubEvent topics fanned out on the EventBus after every committed store change. */
-export type HubEventTopic = "log" | "status" | "attention" | "summary";
+/** HubEvent topics fanned out on the EventBus after every committed store change.
+ * Mirrors the hub.sock event-frame kinds (docs/02 §Event frames): the five
+ * reporter frame names plus attention and phase; `status` carries snapshot
+ * material (agent restart, archive sweep) that is not expressible as a delta.
+ */
+export type HubEventTopic = "log" | "status" | "attention" | "summary" | "phase";
 
 export type HubEvent = { topic: HubEventTopic; payload: unknown };
 
