@@ -3,10 +3,19 @@
 // The console page is the real renderer (tk-swx); the other pages remain
 // placeholders for tk-nbw. Pure string building; no I/O.
 
-import type { AttentionItem, SummaryLine } from "@yurifrl/hub";
+import type { AttentionItem, Phase, SummaryLine } from "@yurifrl/hub";
 import { hueVars } from "./hue";
 import { sessionsByPhase } from "./snapshot";
-import type { HubWebTheme, SnapshotPayload, SessionDigest } from "./types";
+import type {
+  AgentPageInfo,
+  HubArchiveEntry,
+  HubWebTheme,
+  LogViewEntry,
+  SessionDetail,
+  SessionDigest,
+  SnapshotPayload,
+  SurfaceState,
+} from "./types";
 
 /** CSP for every HTML page (docs/04-web.md §Server static assets). */
 export const CSP =
@@ -53,6 +62,60 @@ main{min-width:0}aside{border-left:1px solid var(--muted);padding-left:1rem}
 .log-line{white-space:pre-wrap;word-break:break-word}
 .empty{color:var(--muted)}
 .keys{color:var(--muted);font-size:.85em}
+
+/* session detail + archive (docs/04 §Session detail) */
+.detail-head{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}
+.detail-head h1{font-size:1.1rem;margin:0}
+.badge{border:1px solid var(--muted);border-radius:4px;padding:0 6px;font-size:.85em;color:var(--muted)}
+.badge.closed{color:var(--err);border-color:var(--err)}
+.timeline{display:flex;gap:2px;align-items:center;margin:.4rem 0;flex-wrap:wrap}
+.timeline .seg{padding:0 6px;border-radius:3px;font-size:.85em}
+.timeline .seg-working{background:rgba(63,214,143,.18);color:var(--ok)}
+.timeline .seg-waiting{background:rgba(245,192,78,.18);color:var(--warn)}
+.timeline .seg-blocked{background:rgba(255,122,154,.18);color:var(--err)}
+.timeline .seg-idle{background:rgba(139,151,176,.18);color:var(--muted)}
+.timeline .seg-at{color:var(--muted);font-size:.8em}
+.detail-log{max-height:26rem;overflow-y:auto;background:rgba(0,0,0,.5);border:1px solid var(--muted);border-radius:6px;padding:.5rem}
+.dlog{display:flex;gap:.5rem;padding:.1rem 0}
+.dlog .lt{color:var(--muted);white-space:nowrap}
+.dlog .lk{color:var(--accent);white-space:nowrap}
+.dlog.kind-system .lk{color:var(--muted)}
+.dlog.kind-prompt .lk{color:var(--ok)}
+.dlog.kind-think .lk{color:var(--muted)}
+.dlog.kind-tool .lk{color:var(--warn)}
+.dlog.kind-result .lk{color:var(--muted)}
+.dlog.kind-result.err .lk{color:var(--err)}
+.dlog .lx{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
+.tool-bar{display:flex;gap:.5rem;align-items:center;padding:.15rem 0;font-size:.9em}
+.tool-bar .ok-dot{color:var(--ok)}.tool-bar .err-dot{color:var(--err)}.tool-bar .run-dot{color:var(--muted)}
+.tool-group{border:1px solid var(--muted);border-radius:6px;padding:.3rem .6rem;margin:.3rem 0}
+.tool-group>header{display:flex;gap:.5rem;align-items:center;cursor:pointer}
+.tool-group .count{color:var(--muted)}
+.tool-group .results{margin:.2rem 0 .2rem .8rem}
+.pinned{position:sticky;bottom:0;background:rgba(0,0,0,.85);border-top:1px solid var(--muted);padding:.5rem 0;margin-top:.5rem}
+.pinned form{display:flex;gap:.5rem}
+.pinned input{flex:1;background:rgba(0,0,0,.5);color:inherit;border:1px solid var(--accent);border-radius:4px;padding:.3rem .6rem}
+.pinned .state{color:var(--muted);align-self:center}
+.readonly-note{color:var(--muted);border:1px dashed var(--muted);border-radius:6px;padding:.5rem .75rem;margin-top:.5rem}
+.final-summary{border-left:3px solid var(--accent);padding:.3rem .75rem;margin:.4rem 0}
+.res-list{margin:.2rem 0;padding-left:1.2rem}
+
+/* archive index + agent page (docs/04 §Routes, §Agent page) */
+.arch-row{display:flex;gap:.6rem;align-items:baseline;padding:.2rem 0}
+.arch-row .when{color:var(--muted);white-space:nowrap}
+.arch-row a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.month-h{margin:.8rem 0 .2rem;color:var(--accent)}
+.surface-card{border:1px solid var(--muted);border-left:3px solid var(--accent);border-radius:6px;padding:.5rem .75rem;margin:.5rem 0;background:rgba(0,0,0,.35)}
+.surface-card .headline{margin:.2rem 0;font-weight:bold}
+.surface-card .stale{color:var(--warn)}
+.surface-sec{margin:.5rem 0}
+.surface-sec h3{margin:0 0 .2rem;font-size:.95em}
+.surface-sec.tone-warn h3{color:var(--warn)}
+.surface-sec.tone-err h3{color:var(--err)}
+.surface-sec pre{margin:0;white-space:pre-wrap;word-break:break-word;font:inherit}
+.attn-counts{display:flex;gap:.8rem;margin:.4rem 0}
+.attn-counts .c-approval{color:var(--warn)}.attn-counts .c-question{color:var(--accent)}
+.attn-counts .c-blocked{color:var(--err)}.attn-counts .c-idle{color:var(--muted)}
 </style>`;
 
 /** Attention kind → chip glyph (docs/04 §Main page 2 + wireframe). */
@@ -329,7 +392,7 @@ ${consoleScript(snapshot)}
 </body></html>`;
 };
 
-// ---- placeholder pages (tk-nbw) ----
+// ---- shared 404 helper + archive index + agent page ----
 
 const sessionLine = (s: SessionDigest): string =>
   `<li><a href="/session/${s.id}">${s.id}</a> · ${s.session.phase} · ${s.session.title}</li>`;
@@ -339,32 +402,295 @@ const sessionsList = (snapshot: SnapshotPayload): string => {
   return `<ul>${snapshot.sessions.map(sessionLine).join("")}</ul>`;
 };
 
-/** GET /session/:id — session detail (placeholder; full log renderer pending). */
-export const sessionPage = (id: string, theme: HubWebTheme): string =>
-  `<!doctype html><html><head><title>hub · ${id}</title>${style(theme, "")}</head><body>` +
-  `<h1>session ${id}</h1><p>full session detail renderer pending</p>` +
-  `<p><a href="/">← console</a></p></body></html>`;
+// ---- session detail (GET /session/:id + archived flavor, docs/04 §Session detail) ----
 
-/** GET /agent — hub-agent surface registry (placeholder; real renderer: tk-nbw). */
-export const agentPage = (theme: HubWebTheme): string =>
-  `<!doctype html><html><head><title>hub agent</title>${style(theme, "")}</head><body>` +
-  `<h1>hub agent</h1><p>no hub agent running — start with <code>hub agent</code></p>` +
-  `<p><a href="/">← console</a></p></body></html>`;
+/** Log-view kind → glyph (docs/04 detail wireframe: ▶ session_start, ▸ prompt, ● message, ⚙ tool, ⋯ think, ■ close). */
+const LOG_GLYPH: Record<string, string> = {
+  system: "▶",
+  prompt: "▸",
+  message: "●",
+  tool: "⚙",
+  result: "··",
+  think: "⋯",
+};
 
-/** GET /archive — index of closed sessions (placeholder; real renderer: tk-nbw). */
-export const archivePage = (theme: HubWebTheme): string =>
-  `<!doctype html><html><head><title>hub archive</title>${style(theme, "")}</head><body>` +
-  `<h1>archive</h1><p>no archived sessions</p>` +
-  `<p><a href="/">← console</a></p></body></html>`;
+const clockTime = (ms: number): string =>
+  new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-/** GET /archive/:id — archived session detail (placeholder; real renderer: tk-nbw). */
-export const archivedSessionPage = (id: string, theme: HubWebTheme): string =>
-  `<!doctype html><html><head><title>hub · ${id}</title>${style(theme, "")}</head><body>` +
-  `<h1>archived session ${id}</h1><p>archived detail renderer pending (tk-nbw)</p>` +
-  `<p><a href="/archive">← archive</a></p></body></html>`;
+const logLine = (e: LogViewEntry): string => {
+  const meta = e.meta as { ok?: unknown } | undefined;
+  const errCls = e.kind === "result" && meta?.ok === false ? " err" : "";
+  return `<div class="dlog kind-${esc(e.kind)}${errCls}"><span class="lt">${clockTime(e.t)}</span>` +
+    `<span class="lk">${LOG_GLYPH[e.kind] ?? "·"} ${esc(e.kind)}</span><span class="lx">${esc(e.text)}</span></div>`;
+};
+
+/** One timeline segment: phase word tinted per phase + transition time. */
+const timelineSeg = (p: Phase, at: string): string =>
+  `<span class="seg seg-${p}">${p}</span><span class="seg-at">${esc(at.slice(11, 16))}</span>`;
+
+/**
+ * Phase timeline (docs/04 §Session detail): rail from the record's bounded
+ * `phaseHistory` (newest right); absent field → current phase only.
+ */
+const phaseTimeline = (record: SessionDetail["record"]): string => {
+  const history = record.phaseHistory ?? [{ phase: record.phase, at: record.startedAt }];
+  return `<div class="timeline">${history.map((h) => timelineSeg(h.phase, h.at)).join("<span class=seg-at>→</span>")}</div>`;
+};
+
+/** Tool meta extraction — meta is free-form per-kind extras (docs/02 ## logs). */
+type ToolMeta = { tool?: unknown; ok?: unknown; durationMs?: unknown };
+const toolMeta = (e: LogViewEntry): ToolMeta => (e.meta ?? {}) as ToolMeta;
+
+/**
+ * Tool bars grouped by tool name (docs/04 §Session detail: one compact row
+ * per `tool` log entry — tool name, arg digest, duration, ok/err dot;
+ * collapsed by default per tool kind, click expands the results).
+ */
+const toolBars = (entries: LogViewEntry[]): string => {
+  const calls = entries.filter((e) => e.kind === "tool");
+  if (calls.length === 0) return "";
+  const results = entries.filter((e) => e.kind === "result");
+  const byTool = new Map<string, LogViewEntry[]>();
+  for (const c of calls) {
+    const name = String(toolMeta(c).tool ?? "?");
+    const list = byTool.get(name) ?? [];
+    list.push(c);
+    byTool.set(name, list);
+  }
+  // pair each call with the next result of the same tool after it (ok/duration)
+  const okOf = (c: LogViewEntry): boolean | undefined => {
+    const idx = calls.indexOf(c);
+    const r = results.find((r) => toolMeta(r).tool === toolMeta(c).tool && results.indexOf(r) >= idx);
+    return r === undefined ? undefined : toolMeta(r).ok !== false;
+  };
+  const durOf = (c: LogViewEntry): string => {
+    const idx = calls.indexOf(c);
+    const r = results.find((r) => toolMeta(r).tool === toolMeta(c).tool && results.indexOf(r) >= idx);
+    const ms = r === undefined ? undefined : toolMeta(r).durationMs;
+    return typeof ms === "number" ? fmtDuration(ms) : "";
+  };
+  const groups = [...byTool.entries()].map(([name, list]) => {
+    const oks = list.filter((c) => okOf(c) === true).length;
+    const errs = list.filter((c) => okOf(c) === false).length;
+    const summary = `${list.length}${errs > 0 ? ` (${oks} ok · ${errs} err)` : ""}`;
+    const rows = list
+      .map(
+        (c) =>
+          `<div class="tool-bar"><span class="${okOf(c) === false ? "err-dot" : okOf(c) === undefined ? "run-dot" : "ok-dot"}">●</span>` +
+          `<span>${esc(String(toolMeta(c).tool ?? name))}</span><span class="count">${esc(c.text)}</span>` +
+          `<span class="count">${durOf(c)}</span></div>`,
+      )
+      .join("");
+    return `<details class="tool-group"><header><strong>${esc(name)}</strong> <span class="count">${esc(summary)}</span></header><div class="results">${rows}</div></details>`;
+  });
+  return `<section><h2>tool bars</h2>${groups.join("")}</section>`;
+};
+
+/** Detail-page client script: /stream deltas for THIS session only + ?since= log tailing + send box (docs/04 §Client state). */
+const detailScript = (id: string, lastT: number): string =>
+  `<script>
+(() => {
+  const id = ${JSON.stringify(id)};
+  let lastT = ${lastT};
+  const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const clock = (ms) => new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const GLYPH = { system: "\\u25b6", prompt: "\\u25b8", message: "\\u25cf", tool: "\\u2699", result: "\\u00b7\\u00b7", think: "\\u22ef" };
+  const line = (e) =>
+    '<div class="dlog kind-' + esc(e.kind) + (e.kind === "result" && e.meta && e.meta.ok === false ? " err" : "") + '">' +
+    '<span class="lt">' + clock(e.t) + '</span><span class="lk">' + (GLYPH[e.kind] || "\\u00b7") + " " + esc(e.kind) + '</span><span class="lx">' + esc(e.text) + "</span></div>";
+  const log = document.getElementById("detail-log");
+  const post = (path, body) => fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  // live tail: fetch only entries newer than the last rendered line (?since=)
+  const tail = async () => {
+    const res = await fetch("/session/" + encodeURIComponent(id) + "?since=" + lastT);
+    if (!res.ok) return;
+    const d = JSON.parse(await res.text());
+    for (const e of d.entries) { log.insertAdjacentHTML("beforeend", line(e)); if (e.t > lastT) lastT = e.t; }
+    log.scrollTop = log.scrollHeight;
+  };
+  const phaseWord = document.getElementById("phase-now");
+  if ("EventSource" in window) {
+    const es = new EventSource("/stream");
+    es.addEventListener("snapshot", () => tail()); // authoritative; refresh the tail
+    es.addEventListener("log", (e) => { const d = JSON.parse(e.data); if (d.sessionId === id) { lastT = Math.max(lastT, d.entry.t); log.insertAdjacentHTML("beforeend", line(d.entry)); log.scrollTop = log.scrollHeight; } });
+    es.addEventListener("phase", (e) => { const d = JSON.parse(e.data); if (d.sessionId === id && phaseWord) { phaseWord.textContent = d.phase; phaseWord.className = "phase phase-" + d.phase; } });
+    es.addEventListener("summary", (e) => { const d = JSON.parse(e.data); if (d.sessionId === id) tail(); });
+  }
+  setInterval(tail, 5000); // poll safety net alongside the stream
+  const form = document.getElementById("send-form");
+  if (form) form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = form.querySelector("input");
+    const text = input.value.trim();
+    if (!text) return;
+    const state = document.getElementById("send-state");
+    state.textContent = "queued\\u2026";
+    post("/api/send", { sessionId: id, text: text }).then(async (r) => {
+      state.textContent = r.ok ? "delivered" : (await r.json()).error;
+      if (r.ok) input.value = "";
+    });
+  });
+})();
+</script>`;
+
+/**
+ * GET /session/:id — open flavor: head (hue bar, id, phase, started, model),
+ * phase timeline, full log (via the LINK, bounded tail), tool bars, pinned
+ * send box (docs/04 §Session detail + wireframe).
+ */
+export const sessionPage = (d: SessionDetail & { flavor: "open" }, theme: HubWebTheme): string => {
+  const lastT = d.entries.at(-1)?.t ?? 0;
+  return `<!doctype html><html><head><title>hub · ${esc(d.id)}</title>${style(theme, hueVars([d.id]))}</head><body>
+<header class="detail-head">${hueBar(d.id)}<h1>${esc(d.id)}</h1>
+<span class="phase phase-${d.record.phase}" id="phase-now">${d.record.phase}</span>
+<span class="hint">started ${esc(d.record.startedAt.slice(0, 16).replace("T", " "))} · ${esc(d.record.model)}</span>
+<nav><a href="/">← console</a> <a href="/archive">archive</a> <a href="/agent">agent</a></nav></header>
+${phaseTimeline(d.record)}
+<h2>log <span class="hint">(${esc(d.record.log)} — linked, not embedded)</span></h2>
+<div id="detail-log" class="detail-log">${d.entries.map(logLine).join("")}</div>
+${toolBars(d.entries)}
+<div class="pinned"><form id="send-form" class="inline-form"><input name="text" placeholder="send to ${esc(d.id)}" autocomplete="off">` +
+    `<span class="hint">⏎ sends</span><span class="state" id="send-state"></span></form></div>
+${detailScript(d.id, lastT)}
+</body></html>`;
+};
+
+/** Resolution list for the archived flavor (docs/02 §archive: resolutions tail). */
+const resolutionList = (items: AttentionItem[]): string => {
+  if (items.length === 0) return "";
+  return `<ul class="res-list">${items
+    .map((i) => `<li><span class="sid">${esc(i.id)}</span> ${esc(i.kind)} — ${esc(i.text)}${i.answer !== undefined ? ` → ${esc(i.answer)}` : ""}</li>`)
+    .join("")}</ul>`;
+};
+
+/**
+ * Archived flavor (docs/04 §Session detail + wireframe): closed badge,
+ * closedAt + closedBy, final summary pinned above the log; send box replaced
+ * by a read-only note; no live script — archived sessions are immutable.
+ */
+export const archivedSessionPage = (d: SessionDetail & { flavor: "archived" }, theme: HubWebTheme): string =>
+  `<!doctype html><html><head><title>hub · ${esc(d.id)}</title>${style(theme, hueVars([d.id]))}</head><body>
+<header class="detail-head">${hueBar(d.id)}<h1>${esc(d.id)}</h1><span class="badge closed">ARCHIVED</span>
+<span class="hint">closed ${esc(d.closedAt.slice(0, 16).replace("T", " "))} by ${esc(d.closedBy)}</span>
+<nav><a href="/archive">← archive</a> <a href="/">console</a></nav></header>
+<div class="final-summary"><strong>final summary</strong><br>${esc(d.finalSummary)}${resolutionList(d.resolutions)}</div>
+<h2>log <span class="hint">(${esc(d.record.log)} — read-only)</span></h2>
+<div class="detail-log">${d.entries.map(logLine).join("") || '<p class="empty">log file not retained</p>'}</div>
+<p class="readonly-note">closed — read-only</p>
+</body></html>`;
 
 /** 404 page for unknown session ids — lists open sessions (docs/04 §Routes). */
 export const sessionNotFoundPage = (snapshot: SnapshotPayload, theme: HubWebTheme): string =>
   `<!doctype html><html><head><title>hub · not found</title>${style(theme, "")}</head><body>` +
   `<h1>session not found</h1>${sessionsList(snapshot)}` +
   `<p><a href="/">← console</a></p></body></html>`;
+
+// ---- archive index (GET /archive, docs/04 §Routes) ----
+
+/** Month-grouped archive rows, newest first (the injected archive port owns the order). */
+const archiveGrouped = (entries: HubArchiveEntry[]): string => {
+  if (entries.length === 0) return '<p class="empty">no archived sessions</p>';
+  const byMonth = new Map<string, HubArchiveEntry[]>();
+  for (const e of entries) {
+    const month = e.path.replace(/^archive\//, "").replace(/\/[^"]+$/, "");
+    const list = byMonth.get(month) ?? [];
+    list.push(e);
+    byMonth.set(month, list);
+  }
+  return [...byMonth.entries()]
+    .map(
+      ([month, list]) =>
+        `<h3 class="month-h">${esc(month)}</h3>` +
+        list
+          .map(
+            (e) =>
+              `<div class="arch-row"><span class="when">${esc(e.closedAt.slice(0, 16).replace("T", " "))}</span>` +
+              `<span class="badge">${esc(e.closedBy)}</span><a href="/archive/${encodeURIComponent(e.id)}">${esc(e.id)}</a>` +
+              `<span class="hint">${esc(e.finalSummary.slice(0, 80))}</span></div>`,
+          )
+          .join(""),
+    )
+    .join("");
+};
+
+/** GET /archive — index of closed sessions, grouped by month, link to each detail. */
+export const archivePage = (entries: HubArchiveEntry[], theme: HubWebTheme): string =>
+  `<!doctype html><html><head><title>hub archive</title>${style(theme, "")}</head><body>
+<header><h1>archive</h1><nav><a href="/">← console</a> <a href="/agent">agent</a></nav></header>
+<p class="hint">closed sessions from archive/YYYY-MM/*.json — newest first</p>
+${archiveGrouped(entries)}
+</body></html>`;
+
+// ---- agent page (GET /agent, docs/04 §Agent page + docs/06 §agentSurface) ----
+
+const surfaceStale = (s: SurfaceState): boolean => Date.now() - Date.parse(s.updatedAt) > 5 * 60_000;
+
+/** A file-backed surface: headline + sections (docs/06 SurfaceState shape). */
+const surfaceCard = (s: SurfaceState): string => {
+  const stale = surfaceStale(s);
+  return `<div class="surface-card"><header><strong>${esc(s.agent)}</strong> · surface: ${esc(s.surface)} · rev ${s.revision}` +
+    `${stale ? ' <span class="stale">stale</span>' : ""}<span class="hint"> ${esc(s.updatedAt)}</span></header>` +
+    `${s.headline !== undefined ? `<p class="headline">${esc(s.headline)}</p>` : ""}` +
+    (s.sections ?? [])
+      .map(
+        (sec) =>
+          `<div class="surface-sec${sec.tone !== undefined && sec.tone !== "info" ? ` tone-${sec.tone}` : ""}"><h3>${esc(sec.title)}</h3><pre>${esc(sec.lines.join("\n"))}</pre></div>`,
+      )
+      .join("") +
+    `</div>`;
+};
+
+/**
+ * Surface registry (docs/04 §Agent page): agentSurface id → renderer over
+ * AgentPageInfo + file-backed state. `watcher` is the one synthesized
+ * surface (docs/06: built from status.json, no file); custom ids render the
+ * file state; unknown ids degrade to the generic card — never a 404.
+ */
+const SURFACE_RENDERERS: Record<string, (info: AgentPageInfo, file: SurfaceState | null) => string> = {
+  watcher: (info) => {
+    const c = info.counts;
+    return `<div class="surface-card"><p class="headline">${esc(info.digest)}</p>` +
+      `<div class="attn-counts">` +
+      `<span class="c-approval">⚠ ${c.approval}</span><span class="c-question">⏳ ${c.question}</span>` +
+      `<span class="c-blocked">⛔ ${c.blocked}</span><span class="c-idle">💤 ${c.idle}</span></div>` +
+      `<p>${info.lastSummary !== null ? esc(info.lastSummary.text) : '<span class="hint">no summaries yet</span>'}</p>` +
+      `<p class="hint">phase ${esc(info.record.phase)} · last activity ${esc(info.record.lastActivity.slice(0, 16).replace("T", " "))} · cadence heartbeat every cycle</p>` +
+      `<p><a href="/session/${encodeURIComponent(info.sessionId)}">→ open session</a></p></div>`;
+  },
+  pending: (_info, file) => (file !== null ? surfaceCard(file) : GENERIC_NOTE),
+};
+
+/** Fallback body for unknown ids / missing files (docs/06 rule 4). */
+const GENERIC_NOTE = `<div class="surface-card"><p class="hint">file-backed surface unavailable — generic card below</p></div>`;
+
+/** Generic card: agent name, kind, digest, link to session detail (docs/04 §Agent page). */
+const genericCard = (info: AgentPageInfo): string =>
+  `<div class="surface-card"><header><strong>${esc(info.record.title)}</strong> · ${esc(info.record.kind)} · surface: unknown id</header>` +
+  `<p>▍ digest: ${esc(info.digest)}</p>` +
+  `<p><a href="/session/${encodeURIComponent(info.sessionId)}">→ open session</a></p></div>`;
+
+/**
+ * GET /agent — the hub agent's declared custom surface. No live agent →
+ * empty-state page (docs/04 §Routes). Unknown agentSurface id → generic
+ * card; the registry degrades, it does not fail.
+ */
+export const agentPage = (
+  info: AgentPageInfo | null,
+  file: SurfaceState | null,
+  theme: HubWebTheme,
+): string => {
+  const body =
+    info === null
+      ? `<p class="empty">no hub agent running — start with <code>hub agent</code></p>`
+      : (() => {
+          const id = info.record.agentSurface ?? "watcher";
+          const renderer = SURFACE_RENDERERS[id];
+          if (renderer === undefined) return genericCard(info);
+          return renderer(info, file);
+        })();
+  return `<!doctype html><html><head><title>hub agent</title>${style(theme, "")}</head><body>
+<header><h1>hub agent</h1>${info !== null ? `<span class="badge">surface: ${esc(info.record.agentSurface ?? "watcher")}</span>` : ""}` +
+    `<nav><a href="/">← console</a> <a href="/archive">archive</a></nav></header>
+${body}
+</body></html>`;
+};

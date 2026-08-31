@@ -5,6 +5,7 @@
 
 import { TOKEN_HEX } from "@yurifrl/hub";
 import { createSseBus } from "@yurifrl/hub/adapters/sse_bus";
+import { DEFAULT_AGENT_NAME, detailEnvFrom } from "./detail";
 import { route, type RouteHandlers } from "./routes/table";
 import { buildSnapshot } from "./snapshot";
 import { sseEventsFor } from "./sse";
@@ -34,6 +35,11 @@ export const startHubWeb = async (deps: HubWebDeps): Promise<{ stop(): Promise<v
   });
 
   const handlers: RouteHandlers = {
+    status: async () => {
+      const result = await deps.stores.status.read();
+      if (!result.ok) throw new Error(result.error.message);
+      return result.value;
+    },
     snapshot: async () => {
       const result = await deps.stores.status.read();
       if (!result.ok) throw new Error(result.error.message);
@@ -69,7 +75,7 @@ export const startHubWeb = async (deps: HubWebDeps): Promise<{ stop(): Promise<v
     port: deps.port ?? DEFAULT_WEB_PORT,
     async fetch(req) {
       const url = new URL(req.url);
-      return route(req.method, url.pathname, { theme, bus, sseConns }, handlers, req);
+      return route(req.method, url.pathname, { theme, bus, sseConns, detail: detailEnvFrom(deps), agentName: deps.agentName ?? DEFAULT_AGENT_NAME }, handlers, req);
     },
   });
 

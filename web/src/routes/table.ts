@@ -3,15 +3,19 @@
 // surface, and the /stream SSE endpoint contract.
 // Pure routing over injected state + handlers; no I/O here.
 
-import type { HubError, SummaryLine } from "@yurifrl/hub";
+import type { HubError, StatusFile, SummaryLine } from "@yurifrl/hub";
 import { formatSse, type SseBus, type SseMessage } from "@yurifrl/hub/adapters/sse_bus";
 import { CSP, agentPage, archivedSessionPage, archivePage, consolePage, sessionNotFoundPage, sessionPage } from "../html";
-import type { HubWebTheme, SseConn, SnapshotPayload } from "../types";
+import { archiveIndex, resolveAgentPage, resolveDetail, resolveSurface, type DetailEnv } from "../detail";
+import { buildSnapshot } from "../snapshot";
+import type { HubWebTheme, SseConn, SessionDetail, SnapshotPayload } from "../types";
 
 // ---- shared handlers passed in by server.ts (I/O lives there) ----
 
 export type RouteHandlers = {
   /** current StatusFile for HTML renders and /api/status */
+  status(): Promise<StatusFile>;
+  /** snapshot payload (buildSnapshot over status) for the console + /api/status + /stream */
   snapshot(): Promise<SnapshotPayload>;
   /** tail of summaries.jsonl, newest first (summary rail) */
   summaries(): Promise<SummaryLine[]>;
@@ -31,6 +35,10 @@ export type RouteEnv = {
   bus: SseBus;
   /** open SSE connections, closed on server stop() */
   sseConns: Set<SseConn>;
+  /** log/archive/surface ports for the detail + archive + agent pages */
+  detail: DetailEnv;
+  /** the hub agent's registered name (surface.json lookup); default hub-watcher */
+  agentName: string;
 };
 
 // ---- HTTP responses ----
@@ -173,16 +181,36 @@ export const route = async (
     const session = pathname.match(/^\/session\/([^/]+)$/);
     if (session) {
       const id = decodeURIComponent(session[1]!);
-      const snapshot = await h.snapshot();
-      const known = snapshot.sessions.some((s: { id: string }) => s.id === id);
-      return known
-        ? html(sessionPage(id, env.theme), 200)
-        : html(sessionNotFoundPage(snapshot, env.theme), 404);
+      // ?since= cursor: only entries strictly newer than it (docs/04 §Session
+      // detail: bounded tail + cursor param for live tailing)
+      const sinceParam = new URL(request.url).searchParams.get("since");
+      const status = await h.status();
+      const detail = await resolveDetail(id, status, env.detail, sinceParam !== null ? { since: sinceParam } : {});
+      if (detail === null) return html(sessionNotFoundPage(buildSnapshot(status), env.theme), 404);
+      return detail.flavor === "open"
+        ? html(sessionPage(detail, env.theme), 200)
+        : html(archivedSessionPage(detail as SessionDetail & { flavor: "archived" }, env.theme), 200);
     }
-    if (pathname === "/agent") return html(agentPage(env.theme), 200);
-    if (pathname === "/archive") return html(archivePage(env.theme), 200);
+    if (pathname === "/agent") {
+      const snapshot = await h.snapshot();
+      const info = resolveAgentPage(snapshot, await h.summaries(), snapshot.agentSession);
+      // surface.json read happens only when a live agent declares a custom surface
+      const file =
+        info !== null && info.record.agentSurface !== undefined && info.record.agentSurface !== "watcher"
+          ? await resolveSurface(info.record, env.detail.surfaces, env.agentName)
+          : null;
+      return html(agentPage(info, file, env.theme), 200);
+    }
+    if (pathname === "/archive") return html(archivePage(await archiveIndex(env.detail.archive), env.theme), 200);
     const archive = pathname.match(/^\/archive\/([^/]+)$/);
-    if (archive) return html(archivedSessionPage(decodeURIComponent(archive[1]!), env.theme), 200);
+    if (archive) {
+      const id = decodeURIComponent(archive[1]!);
+      const status = await h.status();
+      const detail = await resolveDetail(id, status, env.detail, { forceArchived: true });
+      return detail === null
+        ? html(sessionNotFoundPage(buildSnapshot(status), env.theme), 404)
+        : html(archivedSessionPage(detail as SessionDetail & { flavor: "archived" }, env.theme), 200);
+    }
   }
 
   // API routes — JSON in/out, writes through the command surface
