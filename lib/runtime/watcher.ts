@@ -3,7 +3,7 @@
 // catch-up pass on restart, and the bounded-backoff supervision policy.
 // Layering: imports domain + ports only (plus the barrel-internal classifier);
 // all I/O stays in adapters — timers arrive through the Scheduler port.
-import type { LogEntry, Phase } from "../domain/session";
+import type { LogEntry, Phase, AttentionKind } from "../domain/session";
 import { classifyBatch, idleSessions } from "../domain/describe";
 import type { AttentionCandidate } from "../domain/attention";
 import { proposeAttention } from "../domain/attention";
@@ -15,7 +15,7 @@ import type { AgentRuntime } from "../ports/agent_runtime";
 import type { Clock } from "../ports/clock";
 import type { Scheduler } from "../ports/scheduler";
 
-/** The agent's own session id, if one is known yet (anti-recursion guard 6). */
+/** The agent's own session ids, if known yet (anti-recursion guard 6). */
 export type WatcherOptions = {
   runtime: AgentRuntime;
   bus: EventBus;
@@ -28,6 +28,10 @@ export type WatcherOptions = {
   name?: string;
   /** idle timeout for the idle phase/attention kind (docs/06 cadence) */
   idleTimeoutMs?: number;
+  /** guard 6: session ids the watcher must never watch (seeded, e.g. after adoption) */
+  selfIds?: string[];
+  /** env the child reads (OMP_BIN, OMP_HUB_MODEL); resolved at the host edge */
+  env?: { ompBin?: string; model?: string };
   /** trailing debounce per session for the agent_end summary pass */
   debounceMs?: number;
   /** supervision: restart cap before giving up */
@@ -80,7 +84,7 @@ export const buildSpawnSpec = (opts: {
   /** target surface; default watcher (docs/06: demo pending) */
   agentSurface?: "watcher" | "pending";
   name?: string;
-  /** guard 5 — pass process.env.OMP_HUB_AGENT at the call site */
+  /** guard 5 — the caller checks OMP_HUB_AGENT in its environment */
   alreadyHubAgent?: boolean;
 }): SpawnSpec | { error: ReturnType<typeof agentSelfError> } => {
   if (opts.alreadyHubAgent) {
@@ -102,7 +106,7 @@ export const buildSpawnSpec = (opts: {
 
 // ---- watcher runtime ----
 
-type OpenItem = { id: string; kind: string };
+type OpenItem = { id: string; kind: AttentionKind };
 
 export type WatcherRuntime = {
   /** idempotent: subscribes, spawns the child, runs catch-up, enters the loop */
@@ -133,6 +137,9 @@ const iso = (clock: Clock): string => new Date(clock.now()).toISOString();
 export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
   const cfg = { ...WATCHER_DEFAULTS, ...opts };
   let agentSessionId: string | null = null;
+  // guard 6: every id the watcher must not watch (spawned child + adopted id
+  // from status.json after a restart, or seeded by the host).
+  const selfIds = new Set<string>(opts.selfIds ?? []);
   let subscribed = false;
   let running = false;
   let restarts = 0;
@@ -148,7 +155,12 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
   const lastActivity = new Map<string, number>();
   const openItems = new Map<string, OpenItem[]>(); // sessionId -> open items
 
-  const isSelf = (sessionId: string): boolean => agentSessionId !== null && sessionId === agentSessionId;
+  // Latest known attention kind per session (last item in the append-ordered
+  // attention array, open or resolved). The catch-up re-raise labels by it so
+  // a question item does not come back as "approval" after a restart.
+  const openKinds = new Map<string, AttentionKind>();
+
+  const isSelf = (sessionId: string): boolean => selfIds.has(sessionId);
 
   // ---- status.json submit (step 3): the hub writer owns the file ----
   const submitPhase = async (sessionId: string, phase: Phase, description: string): Promise<void> => {
@@ -215,6 +227,10 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
       bySession.set(item.sessionId, list);
     }
     openItems.clear();
+    openKinds.clear();
+    for (const item of res.value.attention) {
+      openKinds.set(item.sessionId, item.kind); // array is append-ordered: last wins
+    }
     for (const [k, v] of bySession) openItems.set(k, v);
   };
 
@@ -224,7 +240,14 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
   ): Promise<void> => {
     for (const c of Object.values(classifications)) {
       if (isSelf(c.sessionId)) continue;
+      const s0 = phases.get(c.sessionId); // phase recorded before this batch
       await submitPhase(c.sessionId, c.phase, c.description);
+      if (c.phase === "working" && (s0 === "waiting" || s0 === "blocked")) {
+        // Resolution pass, transition branch (docs/06): the failure cleared /
+        // the tool proceeded — the session is working again, so nothing may
+        // stay queued on the user. The phase move resolves the open items.
+        await resolveIfOpen(c.sessionId, ["approval", "question", "blocked"]);
+      }
       if (c.phase === "waiting" || c.phase === "blocked") {
         const kind = c.phase === "waiting" ? null : "blocked";
         const evidence = kind
@@ -248,6 +271,7 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
   // ---- the loop, per event batch (docs/06 steps 1–5) ----
   const pending: LogEntry[] = [];
   let flushTimer: (() => void) | null = null;
+  let unsub: (() => void) | null = null;
 
   const flush = async (): Promise<void> => {
     flushTimer = null;
@@ -314,9 +338,14 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
   };
 
   // ---- idle timeout check (docs/06: "once per idle episode", Scheduler-scheduled) ----
+  // Guard 6: the watcher never phases itself. Catch-up mirrors every
+  // status.json row (including the adopted self id) into phases, while self
+  // events never refresh lastActivity (onEvent filters them) — without the
+  // exclusion the idle pass would permanently idle the watcher's own row.
   const checkIdle = (): void => {
     const states: Record<string, { phase: Phase; lastActivityAt: number }> = {};
     for (const [id, phase] of phases) {
+      if (isSelf(id)) continue; // guard 6: never idle our own session
       states[id] = { phase, lastActivityAt: lastActivity.get(id) ?? 0 };
     }
     const idle = idleSessions(new Set(pending.map((e) => e.sessionId)), states, {
@@ -352,7 +381,10 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
     const res = await cfg.status.read();
     if (!res.ok) return;
     const snapshot = res.value;
-    agentSessionId = snapshot.agentSession ?? agentSessionId;
+    if (snapshot.agentSession !== undefined) {
+      agentSessionId = snapshot.agentSession;
+      selfIds.add(snapshot.agentSession); // adopt the existing agent id
+    }
 
     phases.clear();
     lastActivity.clear();
@@ -369,9 +401,11 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
       const wanted = rec.phase === "waiting" || rec.phase === "blocked";
       const hasOpen = (openItems.get(id) ?? []).length > 0;
       if (wanted && !hasOpen) {
+        // Preserve the recorded cause kind (approval vs question vs blocked);
+        // the description never said which — re-raise must not mislabel.
         await submitAttention({
           sessionId: id,
-          kind: rec.phase === "blocked" ? "blocked" : "approval",
+          kind: openKinds.get(id) ?? (rec.phase === "blocked" ? "blocked" : "approval"),
           text: rec.description ?? "re-raised after watcher restart",
           evidence: [],
         });
@@ -410,8 +444,8 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
   };
 
   const spawnAgent = async (): Promise<void> => {
-    const ompBin = process.env.OMP_BIN ?? "omp";
-    const model = process.env.OMP_HUB_MODEL;
+    const ompBin = cfg.env?.ompBin ?? "omp";
+    const model = cfg.env?.model;
     const spec = buildSpawnSpec({ ompBin, ...(model !== undefined ? { model } : {}) });
     if ("error" in spec) {
       running = false;
@@ -426,14 +460,17 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
       restarts = 0; // stable long enough: attempts reset
     }
     lastSpawnAt = cfg.clock.now();
-    agentSessionId = res.value.sessionId ?? agentSessionId;
+    if (res.value.sessionId !== null) {
+      agentSessionId = res.value.sessionId;
+      selfIds.add(res.value.sessionId);
+    }
   };
 
   const start = async (): Promise<void> => {
     if (subscribed) return;
     subscribed = true;
     running = true;
-    cfg.bus.subscribe(onEvent);
+    unsub = cfg.bus.subscribe(onEvent);
     await catchUp();
     armIdleCheck();
     await spawnAgent();
@@ -441,7 +478,15 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
 
   const stop = (): void => {
     running = false;
+    if (unsub) {
+      unsub(); // release the bus subscription (docs/01: stop() releases it)
+      unsub = null;
+    }
     subscribed = false;
+    if (flushTimer !== null) {
+      flushTimer(); // drop the in-flight debounce timer with the subscription
+      flushTimer = null;
+    }
     for (const cancel of summaryTimers.values()) cancel();
     summaryTimers.clear();
     pendingSummaries.clear();
@@ -451,6 +496,6 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
   return {
     start,
     stop,
-    state: () => ({ agentSessionId, restarts, running }),
+    state: () => ({ agentSessionId, selfIds: [...selfIds], restarts, running }),
   };
 };

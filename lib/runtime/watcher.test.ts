@@ -140,13 +140,15 @@ const makeStores = (initial?: Partial<StatusFile>, selfIds: string[] = []) => {
 const makeRuntime = (opts: { failTimes?: number; sessionId?: string | null } = {}) => {
   let failuresLeft = opts.failTimes ?? 0;
   let spawnCalls = 0;
+  const spawnArgs: Array<{ name?: string; model?: string }> = [];
   const handleFor = (i: number): AgentHandle => ({
     name: "hub-watcher",
     sessionId: opts.sessionId !== undefined ? opts.sessionId : `agent-${i}`,
   });
   const runtime: AgentRuntime = {
-    spawn: async () => {
+    spawn: async (spec) => {
       spawnCalls++;
+      spawnArgs.push(spec);
       if (failuresLeft > 0) {
         failuresLeft--;
         return { ok: false, error: { code: "unavailable-hub", message: "spawn failed", retryable: true } };
@@ -156,7 +158,7 @@ const makeRuntime = (opts: { failTimes?: number; sessionId?: string | null } = {
     send: async () => ok(undefined),
     kill: async () => ok(undefined),
   };
-  return { runtime, spawnCalls: () => spawnCalls };
+  return { runtime, spawnCalls: () => spawnCalls, spawnArgs };
 };
 
 const makeBus = () => {
@@ -399,6 +401,14 @@ describe("supervision — bounded backoff", () => {
     }
     expect(w.state().running).toBe(false); // gave up; surfaces render last status marked stale
   });
+
+  it("env is injected, not read from process.env (docs/01 layering)", async () => {
+    const env = makeEnv({ sessionId: "agent-e" });
+    const w = startWatcher({ ...baseOpts(env), env: { ompBin: "/opt/omp/bin/omp", model: "haiku" } });
+    await w.start();
+    expect(env.spawnArgs[0]).toEqual({ name: "hub-watcher", model: "haiku" });
+    w.stop();
+  });
 });
 
 describe("catch-up pass (restart)", () => {
@@ -455,6 +465,49 @@ describe("catch-up pass (restart)", () => {
     expect(env.summaries).toHaveLength(0);
   });
 
+  it("re-raise preserves the original kind: question does not come back as approval", async () => {
+    // Session recorded waiting; its question item was answered while the
+    // watcher was down (resolvedAt set, phase update lost in the crash).
+    // Catch-up re-raises with the recorded kind, not a blanket "approval".
+    const env = makeEnv({
+      status: {
+        attention: [
+          {
+            id: "att-1",
+            sessionId: "s-q",
+            kind: "question",
+            text: "which region?",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            resolvedAt: "2026-01-01T00:05:00.000Z",
+            answer: "eu-west",
+          },
+        ],
+        sessions: {
+          "s-q": {
+            status: "open",
+            kind: "peer",
+            cwd: "/tmp",
+            title: "asking",
+            model: "m",
+            phase: "waiting",
+            description: "asked you: which region?",
+            log: "logs/s-q.jsonl",
+            toolCounts: {},
+            turns: 0,
+            startedAt: "2026-01-01T00:00:00.000Z",
+            lastActivity: "2026-01-01T00:00:00.000Z",
+          },
+        },
+      },
+    });
+    const w = startWatcher(baseOpts(env));
+    await w.start();
+    const raised = env.attention.filter((i) => i.sessionId === "s-q" && i.resolvedAt === undefined);
+    expect(raised).toHaveLength(1);
+    expect(raised[0]!.kind).toBe("question");
+    w.stop();
+  });
+
   it("adopted agentSession from status.json is excluded from watching", async () => {
     const env = makeEnv({
       status: { agentSession: "agent-adopted" },
@@ -466,5 +519,113 @@ describe("catch-up pass (restart)", () => {
     env.publish({ topic: "log", payload: logEntry({ sessionId: "agent-adopted", kind: "tool_call", text: "permission request" }) });
     await tick(env);
     expect(env.attention).toHaveLength(0);
+  });
+
+  it("never idles the watcher's own row (guard 6 vs the idle pass)", async () => {
+    // The REJECT scenario: catch-up adopts a self id (old agentSession row in
+    // status.json), no self events ever refresh lastActivity, the idle pass
+    // fires past the timeout — the watcher's own row must stay untouched.
+    const env = makeEnv({ sessionId: "agent-live" });
+    env.statusFile.agentSession = "agent-live";
+    env.statusFile.sessions["agent-live"] = {
+      status: "open",
+      kind: "agent",
+      cwd: "/tmp",
+      title: "hub watcher",
+      model: "m",
+      phase: "working",
+      log: "logs/agent-live.jsonl",
+      toolCounts: {},
+      turns: 0,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      lastActivity: new Date(1_000_000 - 60 * 60_000).toISOString(), // long quiet
+    };
+    const w = startWatcher({ ...baseOpts(env), idleTimeoutMs: 5 * 60_000 });
+    await w.start();
+    expect(w.state().agentSessionId).toBe("agent-live");
+
+    env.clock.advance(6 * 60_000); // past idleTimeoutMs
+    await tick(env);
+    expect(env.statusFile.sessions["agent-live"]!.phase).toBe("working");
+    expect(env.attention.filter((i) => i.sessionId === "agent-live")).toHaveLength(0);
+  });
+});
+
+describe("resolution — phase transitions (docs/06)", () => {
+  let rEnv: ReturnType<typeof makeEnv>;
+
+  beforeEach(() => {
+    rEnv = makeEnv({
+      status: {
+        sessions: {
+          "s-1": {
+            status: "open",
+            kind: "peer",
+            cwd: "/tmp",
+            title: "tilt",
+            model: "m",
+            phase: "working",
+            log: "logs/s-1.jsonl",
+            toolCounts: {},
+            turns: 0,
+            startedAt: "2026-01-01T00:00:00.000Z",
+            lastActivity: "2026-01-01T00:00:00.000Z",
+          },
+        },
+      },
+    });
+  });
+
+  it("waiting → working on the next tool activity resolves the open item", async () => {
+    const w = startWatcher(baseOpts(rEnv));
+    await w.start();
+    rEnv.publish({ topic: "log", payload: logEntry({ kind: "tool_call", text: "permission request: deploy canary" }) });
+    await tick(rEnv);
+    expect(rEnv.statusFile.sessions["s-1"]!.phase).toBe("waiting");
+    expect(rEnv.attention.filter((i) => i.resolvedAt === undefined)).toHaveLength(1);
+
+    // tool proceeds (any approval-shaped next activity re-classifies working)
+    rEnv.publish({ topic: "log", payload: logEntry({ kind: "tool_call", text: "kubectl rollout status" }) });
+    await tick(rEnv);
+    expect(rEnv.statusFile.sessions["s-1"]!.phase).toBe("working");
+    expect(rEnv.attention.every((i) => i.resolvedAt !== undefined)).toBe(true);
+  });
+
+  it("blocked → working on the next assistant activity resolves the blocked item", async () => {
+    const w = startWatcher(baseOpts(rEnv));
+    await w.start();
+    rEnv.publish({ topic: "log", payload: logEntry({ kind: "tool_call", text: "fatal: cannot connect to the registry" }) });
+    await tick(rEnv);
+    expect(rEnv.statusFile.sessions["s-1"]!.phase).toBe("blocked");
+    expect(rEnv.attention.filter((i) => i.resolvedAt === undefined)).toHaveLength(1);
+
+    rEnv.publish({ topic: "log", payload: logEntry({ kind: "assistant_message", text: "recovered, deploying again" }) });
+    await tick(rEnv);
+    expect(rEnv.statusFile.sessions["s-1"]!.phase).toBe("working");
+    expect(rEnv.attention.every((i) => i.resolvedAt !== undefined)).toBe(true);
+  });
+
+  it("working → working with no open item resolves nothing (no phantom resolves)", async () => {
+    const w = startWatcher(baseOpts(rEnv));
+    await w.start();
+    rEnv.publish({ topic: "log", payload: logEntry({ kind: "tool_call", text: "bun test" }) });
+    await tick(rEnv);
+    expect(rEnv.statusFile.sessions["s-1"]!.phase).toBe("working");
+    expect(rEnv.attention).toHaveLength(0);
+  });
+
+  it("stop() unsubscribes from the bus (docs/01: stop releases the subscription)", async () => {
+    const w = startWatcher(baseOpts(rEnv));
+    await w.start();
+    expect(rEnv.handlerCount()).toBe(1);
+
+    w.stop();
+    expect(rEnv.handlerCount()).toBe(0);
+
+    // late events after stop: no processing at all
+    rEnv.publish({ topic: "log", payload: logEntry({ kind: "tool_call", text: "permission request: after stop" }) });
+    await tick(rEnv);
+    expect(rEnv.statusFile.sessions["s-1"]!.phase).toBe("working");
+    expect(rEnv.attention).toHaveLength(0);
   });
 });
