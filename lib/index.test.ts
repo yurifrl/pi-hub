@@ -120,7 +120,11 @@ describe("lib-wide — no omp/@earendil-works/host imports (docs/01)", () => {
     for (const f of tsFiles(LIB)) {
       const src = readFileSync(f, "utf8");
       expect(src, relative(LIB, f)).not.toMatch(/from\s+["']@earendil-works/);
-      expect(src, relative(LIB, f)).not.toMatch(/from\s+["'](node|bun):/);
+      // docs/01 import matrix: node/bun std allowed at the edge (adapters) only
+      const inAdapters = relative(LIB, f).startsWith("adapters/");
+      if (!inAdapters) {
+        expect(src, relative(LIB, f)).not.toMatch(/from\s+["'](node|bun):/);
+      }
     }
   });
 
