@@ -337,8 +337,13 @@ export type HubClient = {
     cmd(op: string, args?: Record<string, unknown>, deadlineMs?: number): Promise<Result<unknown, HubError>>;
     /** handler for unsolicited event frames (requires subscribe:true at connect) */
     onEvent(fn: (frame: Record<string, unknown>) => void): void;
-    /** graceful close; in-flight cmds fail with unavailable-hub */
-    close(): void;
+    /** connection-death handler: hub restart / socket error / graceful close;
+     * fires at most once, whether or not the handshake ever completed */
+    onClose(fn: (info: { reason: "restart" | "error"; message?: string }) => void): void;
+    /** graceful close; in-flight cmds fail with unavailable-hub; an optional
+     * reason flows to onClose as { reason:"restart", message } (the reporter
+     * marks deliberate shutdowns so they are not confused with hub death) */
+    close(reason?: { reason: "restart"; message?: string }): void;
 };
 
 /** Connect to hub.sock and speak the frame protocol. Connection failures are
@@ -347,6 +352,11 @@ export const connectHubClient = (opts: ClientOptions): Promise<Result<HubClient,
     new Promise((resolve) => {
         const pending = new Map<string, { resolve: (r: Result<unknown, HubError>) => void; timer: NodeJS.Timeout }>();
         const eventHandlers: Array<(frame: Record<string, unknown>) => void> = [];
+        let closeHandler: ((info: { reason: "restart" | "error"; message?: string }) => void) | null = null;
+        /** set by close({reason:"restart"}) so the close path reports a
+         * deliberate shutdown instead of hub death (reporter contract). */
+        let deliberateClose: { reason: "restart"; message?: string } | null = null;
+        let closeFired = false;
         let cmdSeq = 0;
         let buffer = "";
         let settled = false;
@@ -429,17 +439,29 @@ export const connectHubClient = (opts: ClientOptions): Promise<Result<HubClient,
             }
         });
 
+        const fireClose = (info: { reason: "restart" | "error"; message?: string }): void => {
+            if (closeFired) return;
+            closeFired = true;
+            closeHandler?.(info);
+        };
+
         sock.on("error", (e: NodeJS.ErrnoException) => {
             const error = hubError("unavailable-hub", `hub unreachable: ${e.code ?? "error"}`, {
                 retryable: e.code === "ECONNREFUSED",
                 cause: e.code,
             });
             failAll(error);
+            fireClose({ reason: "error", message: `hub unreachable: ${e.code ?? "error"}` });
             finish({ ok: false, error });
         });
 
         sock.on("close", () => {
             failAll(hubError("unavailable-hub", "hub connection closed", { retryable: true }));
+            if (deliberateClose) {
+                fireClose({ reason: deliberateClose.reason, ...(deliberateClose.message !== undefined ? { message: deliberateClose.message } : {}) });
+            } else {
+                fireClose({ reason: "error", message: "hub connection closed" });
+            }
             // connection gone before hello reply: resolve the connect attempt
             finish({ ok: false, error: hubError("unavailable-hub", "hub connection closed before handshake", { retryable: true }) });
         });
@@ -477,7 +499,12 @@ export const connectHubClient = (opts: ClientOptions): Promise<Result<HubClient,
                 eventHandlers.push(fn);
             },
 
-            close() {
+            onClose(fn) {
+                closeHandler = fn;
+            },
+
+            close(reason) {
+                if (reason?.reason === "restart") deliberateClose = reason;
                 try {
                     sock.end();
                 } catch {
