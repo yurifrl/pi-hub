@@ -95,6 +95,8 @@ export type HubLocal = {
     stop(): Promise<void>;
     /** publish the hub event stream to subscribed socket clients */
     broadcastEvent(evt: unknown): void;
+    /** in-process EventBus tap for the widget controller (unsubscribe on stop) */
+    subscribeWidget(onEvent: (evt: unknown) => void): (() => void) | null;
     /** inbound reporter frame entry point (socket onReport → core.handleEvent) */
     handleReport(frame: ReportFrame): void;
     /** deliver a text into a peer session through the socket deliverTo bridge */
@@ -163,6 +165,12 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
 
     let socket: Pick<HubSocketServer, "start" | "close" | "broadcast" | "deliverTo"> | null = null;
     let watcher: WatcherRuntime | null = null;
+
+    /** In-process widget tap: the hub session's controller subscribes to the
+     * same EventBus the watcher and socket fan-out use (docs/01 stage 4:
+     * watcher + widget + socket subscribers). */
+    const subscribeWidget = (onEvent: (evt: unknown) => void): (() => void) | null =>
+        bus.subscribe(onEvent as Parameters<typeof bus.subscribe>[0]);
 
     const handleReport = (frame: ReportFrame): void => {
         const raw = reportToRaw(frame);
@@ -285,6 +293,8 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
         broadcastEvent(evt) {
             socket?.broadcast(evt);
         },
+
+        subscribeWidget,
 
         handleReport,
 

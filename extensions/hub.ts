@@ -15,6 +15,9 @@ import { createHubLocal } from "./hub_local";
 import type { HubLocal } from "./hub_local";
 import { createHubTools } from "./hub_tools";
 import { createReporter } from "./hub_reporter";
+import { createWidgetController } from "./widget";
+import type { WidgetController, WidgetHost } from "./widget";
+import { createTimeoutScheduler } from "@yurifrl/hub/adapters/timeout_scheduler";
 import type { AgentRuntime } from "@yurifrl/hub";
 
 /** The widget key — the stable contract with omp's UI (docs/05 §Widget).
@@ -32,6 +35,8 @@ type HubState = {
     agentActive: boolean;
     /** the agent child handle name from the runtime */
     agentName: string | null;
+    /** the 8-line attention widget controller (docs/05 §Widget) */
+    widget: WidgetController | null;
 };
 
 const okMsg = (text: string): { ok: true; text: string } => ({ ok: true, text });
@@ -122,14 +127,22 @@ export const buildAgentSpec = (env: HubEnv): { name: string; bin: string; args: 
     return { name: "hub-watcher", bin: env.ompBin, args: ["--mode", "acp"], env: childEnv };
 };
 
+/** The widget factory the default entry uses. Default wires the real
+ * hub.sock subscription + timeout scheduler (no module-level mutable state). */
+const defaultWidgetFactory = (host: WidgetHost, env: HubEnv): WidgetController =>
+    createWidgetController({
+        sockPath: env.sock,
+        host,
+        scheduler: createTimeoutScheduler(),
+    });
+
 /** The extension body, parameterized for tests (docs/01 §Testing: injectable
  * edges). `connect` replaces the real hub.sock client factory so order tests
  * run hermetically; production callers use the default export. */
 export const createHubExtension = (injections?: { connect?: Parameters<typeof createReporter>[0]["connect"] }) => (pi: ExtensionAPI): void => {
     const env = resolveHubEnv();
 
-    // ---- brain guard (docs/05 §Anti-recursion guard 1) ----
-    // The brain child loads this same extension with OMP_HUB_BRAIN=1. It must
+    // ---- brain guard (docs/05 §Anti-recursion guard 1) ----    // The brain child loads this same extension with OMP_HUB_BRAIN=1. It must
     // contribute RPC answers only: return BEFORE any pi.on / registerTool /
     // registerCommand call. This early-return IS the first and hardest guard.
     if (env.brain) return;
@@ -144,6 +157,7 @@ export const createHubExtension = (injections?: { connect?: Parameters<typeof cr
         selfSessionId: "",
         agentActive: false,
         agentName: null,
+        widget: null,
     };
     const commands = createHubCommands(env, state);
 
@@ -205,9 +219,33 @@ export const createHubExtension = (injections?: { connect?: Parameters<typeof cr
     // process resolves sessionFacts against an undefined lastCtx: sessionId
     // "", no connect, dead frames.
     // It also claims the widget slot (docs/05 §Entry step 1); the RENDER is
-    // tk-z9a's — it consumes the subscription surface registered below and
-    // paints through this same key. Cleared on /hub-stop and shutdown. The
-    // two concerns are independent; pi supports multiple listeners.
+    // tk-z9a's — the controller below paints through this same key once the
+    // hub starts. Cleared on /hub-stop and shutdown.
+    // ---- widget lifecycle (docs/05 §Widget) ----
+    // The controller owns the attention model, the 250 ms debounce, and the
+    // paint through WIDGET_KEY. Events reach it two ways: the hub.sock
+    // subscription (own + peer frames mirror through the hub) and the
+    // in-process EventBus tap (hub-local events, CLI-op mutations). Started
+    // on /hub-start, stopped on /hub-stop and shutdown (widget cleared).
+    let widgetBusUnsub: (() => void) | null = null;
+    const startWidget = (widgetHost: WidgetHost): WidgetController => {
+        const controller = defaultWidgetFactory(widgetHost, env);
+        controller.start();
+        // in-process tap: local.stack events land without a socket round trip
+        widgetBusUnsub = state.local?.subscribeWidget((evt) => {
+            const e = evt as { topic?: string; payload?: Record<string, unknown> };
+            if (typeof e?.topic !== "string") return;
+            controller.handleEvent({ kind: e.topic, ...(e.payload ?? {}) });
+        }) ?? null;
+        return controller;
+    };
+    const stopWidget = (ctx?: ExtensionContext): void => {
+        widgetBusUnsub?.();
+        widgetBusUnsub = null;
+        state.widget?.stop(); // stop() clears the widget slot itself
+        state.widget = null;
+        if (ctx) ctx.ui.setWidget(WIDGET_KEY, undefined);
+    };
     pi.on("session_start", (_event, ctx: ExtensionContext) => {
         lastCtx = ctx;
         if (!state.active) ctx.ui.setWidget(WIDGET_KEY, ["hub idle — /hub-start to serve"]);
@@ -224,9 +262,11 @@ export const createHubExtension = (injections?: { connect?: Parameters<typeof cr
                 ctx.ui.notify(out.text, "error");
                 return;
             }
-            // claim the widget slot with an orientation line; tk-z9a replaces
-            // the renderer and keeps the key stable across renders
+            // claim the widget slot with an orientation line, then hand the
+            // slot to the controller: it subscribes to hub.sock and paints
+            // the 8-line attention render under the same key
             ctx.ui.setWidget(WIDGET_KEY, ["hub active — watching sessions"]);
+            state.widget = startWidget({ setWidget: (lines) => ctx.ui.setWidget(WIDGET_KEY, lines) });
             ctx.ui.notify(out.text, "info");
         },
     });
@@ -240,6 +280,7 @@ export const createHubExtension = (injections?: { connect?: Parameters<typeof cr
                 ctx.ui.notify(out.text, "error");
                 return;
             }
+            stopWidget(ctx);
             ctx.ui.setWidget(WIDGET_KEY, ["hub idle — /hub-start to serve"]);
             ctx.ui.notify(out.text, "info");
         },
@@ -258,6 +299,7 @@ export const createHubExtension = (injections?: { connect?: Parameters<typeof cr
     // disposed, status updated — peer sessions are left as-is (never archived). ----
     pi.on("session_shutdown", () => {
         const clear = (ctx?: ExtensionContext) => {
+            stopWidget(ctx);
             if (ctx) ctx.ui.setWidget(WIDGET_KEY, undefined);
         };
         if (state.active) {
