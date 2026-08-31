@@ -334,6 +334,35 @@ describe("GET /stream", () => {
       await one.stop();
     }
   });
+
+  it("fans bus events out as delta events shaped per the SSE contract", async () => {
+    const one = await startHubWeb({ ...deps, port: 0 });
+    try {
+      const res = await fetch(`http://127.0.0.1:${one.port}/stream`);
+      const reader = res.body!.getReader();
+      await reader.read(); // drain the initial snapshot chunk
+      const sub = subscribers.at(-1)!;
+      // publish deltas as the hub would (docs/04 §SSE contract shapes); the
+      // phase payload rides on the status topic — topic→event naming is the
+      // /stream endpoint's concern (tk-szb); this task pins transport + shape
+      sub({ topic: "attention", payload: { op: "raised", item: { id: "att-9", sessionId: "tilt", kind: "question", text: "ping?", createdAt: new Date(0).toISOString() } } });
+      sub({ topic: "log", payload: { sessionId: "tilt", hue: 42, entry: { t: 1, kind: "message", text: "hello" } } });
+      sub({ topic: "summary", payload: { t: new Date(0).toISOString(), sessionId: "tilt", kind: "summary", text: "cycle done", by: "agent" } });
+      sub({ topic: "status", payload: { sessionId: "tilt", phase: "working", at: new Date(0).toISOString() } });
+      const { value } = await reader.read();
+      const text = new TextDecoder().decode(value!);
+      expect(text).toContain("event: attention");
+      expect(text).toContain("\"op\":\"raised\"");
+      expect(text).toContain("event: log");
+      expect(text).toContain("\"hue\":42");
+      expect(text).toContain("event: summary");
+      expect(text).toContain("event: status");
+      expect(text).toContain("\"phase\":\"working\"");
+      await reader.cancel();
+    } finally {
+      await one.stop();
+    }
+  });
 });
 
 describe("lifecycle", () => {
