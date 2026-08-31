@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "_type": "issue",
+  "id": "tk-l4a",
+  "title": "lib: wire selfSessionId at hub factory (guard-2 dead in real wiring)",
+  "description": "",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": null,
+  "assignee": null,
+  "created_by": "yuri",
+  "created_at": "2026-08-31T20:22:24.905Z",
+  "updated_at": "2026-08-31T20:22:34.279Z",
+  "started_at": null,
+  "closed_at": null,
+  "due_at": null,
+  "defer_until": null,
+  "parent": null,
+  "labels": [],
+  "notes": null,
+  "design": null,
+  "acceptance_criteria": null,
+  "estimated_minutes": null,
+  "spec_id": null,
+  "external_ref": null,
+  "branch": null,
+  "metadata": {},
+  "dependencies": [],
+  "dependency_count": 0,
+  "dependent_count": 0,
+  "comments": [
+    {
+      "id": "comment-1989029b-bc19-4da9-937c-178844c830c0",
+      "issue_id": "tk-l4a",
+      "author": "yuri",
+      "text": "Found by tk-epx validator (P1, pre-existing at 5cd9fdf): state.selfSessionId initialized '' in extensions/hub.ts:140, never written anywhere -> guard-2 self-feed (local handleReport when sessionId === selfSessionId) is dead in real wiring. tk-hai comments state factory-closure intent. Spec: docs/05-omp-plugin.md self-feed + docs/01 layering. Fix: set selfSessionId from ExtensionContext at factory time (before reporter/commands register), test that guard-2 fires with real identity (not fake-injected).",
+      "created_at": "2026-08-31T20:22:34.279Z"
+    }
+  ],
+  "comment_count": 1
+}

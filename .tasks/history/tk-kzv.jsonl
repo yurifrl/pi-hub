@@ -2,3 +2,4 @@
 {"issue_id":"tk-kzv","action":"comment","at":"2026-08-30T19:05:04.256Z","actor":"yuri","data":{"text":"Spec: docs/01-architecture.md Testing (one e2e: two fake sessions over unix socket exercising prompt tool result relay). Frame protocol: docs/02-data-contracts.md hub.sock. Acceptance mirrors the shipped hub.ts chain verified earlier (echo round-trip exit 0)."}}
 {"issue_id":"tk-kzv","action":"dependency_added","at":"2026-08-30T19:06:21.891Z","actor":"yuri","data":{"target":"tk-sj9","type":"blocks"}}
 {"issue_id":"tk-kzv","action":"save","at":"2026-08-30T19:06:43.247Z","actor":null,"data":{"status":"open","title":"e2e: two fake sessions over unix socket — full prompt/tool/result relay"}}
+{"issue_id":"tk-kzv","action":"dependency_added","at":"2026-08-31T20:22:34.403Z","actor":"yuri","data":{"target":"tk-l4a","type":"blocks"}}
