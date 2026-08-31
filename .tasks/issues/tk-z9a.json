@@ -4,16 +4,16 @@
   "id": "tk-z9a",
   "title": "extensions: widget — 8-line attention render with counts, top item, hue bars",
   "description": "",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "issue_type": "task",
   "owner": null,
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:15.762Z",
-  "updated_at": "2026-08-31T20:18:32.172Z",
+  "updated_at": "2026-08-31T21:06:04.196Z",
   "started_at": null,
-  "closed_at": null,
+  "closed_at": "2026-08-31T21:06:04.196Z",
   "due_at": null,
   "defer_until": null,
   "parent": null,
@@ -52,7 +52,28 @@
       "author": "yuri",
       "text": "tk-z9a done — widget: 8-line attention render.\n\nCommit 62c4108 on matchday/tk-z9a, pushed.\n\nImplementation:\n- extensions/widget.ts: WidgetModel + decodeFrame (docs/02 §Event frames; unknown/malformed dropped) + applyFrame fold + renderWidget + createWidgetController (250ms trailing debounce, states idle/busy/attach/summary-flash, setWidget only when lines changed, offline → '(hub offline)' + bounded reconnect backoff 1s→30s).\n- extensions/hub_sock.ts: hub.sock subscription feed (hello subscribe:true → ch:event frames), mirrors cli/src/hub_events.ts pattern (extensions can't import cli per docs/01 import matrix; decode kept in widget.ts so no duplication was extracted — real duplication is one frame-walk loop).\n- extensions/hub.ts wiring: widget controller started on /hub-start, stopped on /hub-stop + session_shutdown (clears WIDGET_KEY). Events reach it two ways: in-process EventBus tap (hub_local.subscribeWidget — hub-local events incl. CLI ops) + hub.sock subscription (peer mirror). NO_COLOR → plain.\n- Hue bars: lib barrel hueColorCodes — shared hash, no re-hash (verified idempotent in test vs lib).\n- lib/package.json: exposed ./ports/* subpath so the extension imports the Scheduler type for injected timers.\n\nAcceptance evidence:\n- bun test workspace: 598 pass / 0 fail (22 new widget tests: 8-line budget incl. 20-session/9-item stress, line-1 counts ⚠ human kinds + ⏳ working|waiting + 💤 idle + top item + answer hint, hue-bar equality with lib barrel + idempotence, state transitions + attach one-refresh, 250ms debounce one-paint-per-burst, offline degrade + backoff, NO_COLOR zero escapes, fold invariants).\n- tsc --noEmit: clean. lib/cli bun run check builds pass.\n- Note: hub.test.ts has a pre-existing flake (sleep-race in P2-4/report-frames tests, reproducible at base 5cd9fdf ~1/12 runs) — not from this change, left untouched (sibling scope).\n- Against ISC: budget enforced by lines.slice(0,8) + compact slot omission (docs example 6-line render honored); overflow beats summary on line 7 per table; footer sock path + summaries count; idle dims (30s no events + no open attention).\n\nLeft OPEN for validator.",
       "created_at": "2026-08-31T20:18:32.172Z"
+    },
+    {
+      "id": "comment-39d6d485-26f1-4a23-b4fd-7d9d3632b40e",
+      "issue_id": "tk-z9a",
+      "author": "yuri",
+      "text": "VALIDATOR EVIDENCE (interim, part 1): bun test workspace 598 pass / 0 fail x3 runs; bunx tsc --noEmit exit 0. hub.test.ts flake confirmed pre-existing: base 5cd9fdf archive, 25 solo runs of extensions/hub.test.ts = 2 flaky failures (report-frames normalize race + not-archived-on-stop race) vs 2 in 10 runs on branch - same signature, not introduced by z9a. Mutation probes: (c) debounce collapse removed -> burst test FAILS as expected (kill signal works). Probes (a) line7 precedence flip and (b) 8-line slice removal survive - see part 2 for why neither is a code bug.",
+      "created_at": "2026-08-31T21:05:28.137Z"
+    },
+    {
+      "id": "comment-a1819f4f-15c3-4ffa-8a8b-0ef2cfabaa9c",
+      "issue_id": "tk-z9a",
+      "author": "yuri",
+      "text": "VALIDATOR EVIDENCE (part 2 - probes a and b analysis): (a) precedence flip survives because widget.test.ts fixtures never combine overflow WITH a summary line in one model, so no test distinguishes order. The implementation itself follows the docs table (overflow checked first, widget.ts line ~283) - code correct, test coverage gap only. (b) slice(0,8) removal survives because composition is structurally bounded: 1 orientation + max 5 rows + max 1 slot-7 + 1 footer = max 8. slice is defense-in-depth for the CONTRACT, not load-bearing logic. Suggested (non-blocking) follow-up: add a fixture with 6+ sessions AND a summary asserting line7 contains more and not the summary text. Verdict in next comment.",
+      "created_at": "2026-08-31T21:05:42.140Z"
+    },
+    {
+      "id": "comment-278588c7-fe05-4440-8a0e-df5f06d4de44",
+      "issue_id": "tk-z9a",
+      "author": "yuri",
+      "text": "VERIFIED PASS: docs/05 §Widget compliance confirmed by hunk review + behavioral runs. Line composition: line1 counts filter human kinds only, top item + answer <id> hint; lines2-6 hue bars via shared lib hueColorCodes (no local hash, verified test asserts equality with lib barrel); line7 overflow beats summary per table (code order correct); line8 footer sock path + summaries n; compact: empty model renders 2 lines; structural max 8. States: trailing 250ms debounce - live wire probe: 5-frame burst = exactly 1 pending timer + 1 paint; identical-state frame = 0 setWidget (string compare works); onClose = (hub offline) painted + backoff re-arm + reconnect paints restored model; stop clears slot. NO_COLOR: zero escapes in whole render path (hueBarCodes/tokenSgr/dim all gated on color flag). hub_sock.ts vs cli hub_events.ts: handshake/version/close semantics identical, decode divergence is intentional layering (cli keeps envelope with topic; widget strips to flat WidgetFrame; both handle ch!=event skip + malformed JSON skip identically). lib/package.json ./ports/* export is additive, existing subpaths intact. Scope: widget.ts, hub_sock.ts, hub.ts lifecycle, hub_local.ts subscribeWidget tap, lib/package.json, tests - sibling scope untouched. Workspace 598/0 x3, tsc 0. Pre-existing hub.test.ts sleep-race flake documented at base. Test-coverage gaps noted (overflow+summary combo fixture missing; slice not load-bearing) are non-blocking follow-ups. No browser surface: widget renders inside the omp TUI which has no headless harness in this repo - validated through pure-render tests + live-wire controller probe instead.",
+      "created_at": "2026-08-31T21:05:57.310Z"
     }
   ],
-  "comment_count": 2
+  "comment_count": 5
 }
