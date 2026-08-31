@@ -4,14 +4,14 @@
   "id": "tk-tku",
   "title": "cli: subcommands — answer assign send tool spawn kill archive",
   "description": "",
-  "status": "open",
+  "status": "in-progress",
   "priority": 2,
   "issue_type": "task",
   "owner": null,
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:28.544Z",
-  "updated_at": "2026-08-30T19:05:55.597Z",
+  "updated_at": "2026-08-31T11:51:26.646Z",
   "started_at": null,
   "closed_at": null,
   "due_at": null,
@@ -45,7 +45,14 @@
       "author": "yuri",
       "text": "Spec: docs/03-cli.md Subcommands (answer assign send tool spawn kill archive each with args flags output human json ndjson and error paths; kill red confirm; send fuzzy picker). Socket commands: docs/02-data-contracts.md hub.sock cmd frames. Attention resolve semantics: docs/02 Attention lifecycle.",
       "created_at": "2026-08-30T19:03:49.485Z"
+    },
+    {
+      "id": "comment-255a1110-708d-4360-83b2-4b697b52989d",
+      "issue_id": "tk-tku",
+      "author": "yuri",
+      "text": "Implementation status: all seven subcommands (answer assign send tool spawn kill archive) wired in bin.ts tree with real bodies. Shared helpers: resolve.ts prefix resolution (unique prefixes, ambiguous w/ candidates in detail, not_found), pick_session.ts targeting, hub_ops.ts runOp/listOp/toolBudgetMs over ctx.cmd (DI-stubbable), cmd_mutation_helpers.ts failWith/failReply channel. Per-command bodies emit spec envelopes (--json shapes per docs/03 Subcommands) and human confirmations. Picker requires TTY, machine modes never prompt (kill consent matrix: --yes skips; non-TTY/machine without --yes = usage 1, never assumes consent). tool strict [json] parse fail = usage 1; budget max(replyTimeoutMs, wait*1000). archive LIST reads archive/YYYY-MM/*.json with no socket. Tests: 24 new contract tests in commands.test.ts (in-process fake hub socket + captured run()); bin.test.ts config-resolution tests now exercise a fake hub end-to-end (answer reaches hub, not_found envelope). Full workspace: 233 tests green, tsc --noEmit clean, bun build clean.",
+      "created_at": "2026-08-31T11:51:26.646Z"
     }
   ],
-  "comment_count": 1
+  "comment_count": 2
 }
