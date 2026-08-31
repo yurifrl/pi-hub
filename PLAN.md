@@ -54,6 +54,11 @@ peerDependencies @earendil-works/pi-coding-agent + @earendil-works/pi-tui with
 peerDependenciesMeta optional — all present. Committed as 18ae03b on
 matchday/tk-sne; extra "type": "module" matches the reference
 pi-fbr-match-day/package.json and is additive, not a deviation.
+Bin resolution re-verified after d3afbea: cli/src/bin.ts has
+#!/usr/bin/env bun + exec bit (git mode 100755); fresh `bun install`
+recreates node_modules/.bin/hub and direct execution exits 0. Barrel
+`@yurifrl/hub` and adapter subpath `@yurifrl/hub/adapters/*` import OK;
+per-workspace `bun run check` passes for lib, cli, web.
 
 ## 2. Data contracts (docs/02-data-contracts.md)
 
