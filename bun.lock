@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "@yurifrl/pi-hub",
+      "devDependencies": {
+        "@types/bun": "^1.4.0",
+      },
       "peerDependencies": {
         "@earendil-works/pi-coding-agent": "*",
         "@earendil-works/pi-tui": "*",
@@ -30,10 +33,18 @@
     },
   },
   "packages": {
+    "@types/bun": ["@types/bun@1.4.0", "https://orbit-flutter-af768sf2xs.fbr.land/npm/npm-proxy/@types/bun/-/bun-1.4.0.tgz", { "dependencies": { "bun-types": "1.4.0" } }, "sha512-K+lZULY23vRgK/CfTjFIV+tyifaNdSMlPh9j+6mQ/cLfpOznLyAuzgV/JQysyECpkBQLVMSyvjlr2fBUSA9wFQ=="],
+
+    "@types/node": ["@types/node@26.2.0", "https://orbit-flutter-af768sf2xs.fbr.land/npm/npm-proxy/@types/node/-/node-26.2.0.tgz", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-5IviulTZeRNp2vAJ514cc/HUlY5nZ9fCbq9DMyC52BrhFZACo3nI0R7qBxhQmo/d27NFe96ur/b7Wwxklda+kg=="],
+
     "@yurifrl/hub": ["@yurifrl/hub@workspace:lib"],
 
     "@yurifrl/hub-cli": ["@yurifrl/hub-cli@workspace:cli"],
 
     "@yurifrl/hub-web": ["@yurifrl/hub-web@workspace:web"],
+
+    "bun-types": ["bun-types@1.4.0", "https://orbit-flutter-af768sf2xs.fbr.land/npm/npm-proxy/bun-types/-/bun-types-1.4.0.tgz", { "dependencies": { "@types/node": "*" } }, "sha512-iIKw23BspnQQYd3prITOBxeUsxBHnwzX6YJfGMuNOZzeNcMmVqzIIVGRm1l69ogaPQmb4wB6BN8mA5bE9YuC5Q=="],
+
+    "undici-types": ["undici-types@8.3.0", "https://orbit-flutter-af768sf2xs.fbr.land/npm/npm-proxy/undici-types/-/undici-types-8.3.0.tgz", {}, "sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ=="],
   }
 }
