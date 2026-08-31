@@ -415,7 +415,9 @@ export const createWidgetController = (opts: WidgetControllerOptions) => {
 
     const connect = (): void => {
         if (stopped) return;
-        void opts.subscribe!(opts.sockPath).then((res) => {
+        // default is hub_sock's real feed (opts.subscribe exists for tests)
+        const subscribe = opts.subscribe ?? subscribeHubFeed;
+        void subscribe(opts.sockPath).then((res) => {
             if (stopped) return;
             if (!res.ok) {
                 enterOffline();

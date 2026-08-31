@@ -248,6 +248,18 @@ export const createHubExtension = (injections?: { connect?: Parameters<typeof cr
     };
     pi.on("session_start", (_event, ctx: ExtensionContext) => {
         lastCtx = ctx;
+        // guard-2 identity: state.selfSessionId and the reporter's
+        // sessionFacts().sessionId derive from the SAME ctx capture here —
+        // one source of truth, two seams (hub.ts state is the tk-hai closure
+        // seam the tools/local read; sessionFacts feeds the reporter).
+        // Kept on shutdown (not cleared): docs/05 §Anti-recursion guard 2
+        // defines the contract purely as hubActive && sessionId ===
+        // selfSessionId; a shutdown session is inactive (hubStop/brain-stop
+        // reset state.active) and the process dies with it, so clearing adds
+        // no safety the guard already has.
+        // sessionManager may be absent on bare test contexts — identity is
+        // only defined for real dispatches; keep the widget claim alive below
+        state.selfSessionId = ctx?.sessionManager?.getSessionId?.() ?? "";
         if (!state.active) ctx.ui.setWidget(WIDGET_KEY, ["hub idle — /hub-start to serve"]);
     });
 

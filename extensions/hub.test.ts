@@ -820,8 +820,138 @@ describe("registration order — ctx capture precedes the reporter (tk-epx P0)",
 });
 
 // =====================================================================
+// 8. guard-2 self-feed through the REAL factory wiring (tk-l4a)
+// =====================================================================
+// Pre-tk-l4a, state.selfSessionId was initialized "" in the factory closure
+// and never written: the reporter's self-feed decision (sessionId ===
+// selfSessionId → local handleReport, zero socket frames — docs/05
+// §Anti-recursion guard 2) could never fire in real wiring; the reporter's
+// own unit tests passed only because they injected the id directly. These
+// tests run createHubExtension through makePi's ORDERED dispatch: one
+// session_start with a real-ish ctx (the only one a real process gets), then
+// reporter frames. Mutation check: delete the state.selfSessionId write in
+// hub.ts's session_start handler → the self-feed test below FAILS.
+
+describe("guard-2 self-feed — factory writes state.selfSessionId at ctx capture (tk-l4a)", () => {
+    const makeSelfWired = async () => {
+        const { env } = await makeEnv();
+        process.env.OMP_HUB_SOCK = env.sock;
+        const fake = makeFakeHubClient();
+        const factory = createHubExtension({
+            connect: async () => ({ ok: true as const, client: fake.client }),
+        });
+        return { env, fake, factory };
+    };
+
+    const makeSelfCtx = (id: string) => ({
+        sessionManager: { getSessionId: () => id, getSessionName: () => "self" },
+        cwd: "/work/self",
+        model: { id: "m-self" },
+        ui: { setWidget: () => {} },
+    });
+
+    it("sessionId === selfSessionId → guard-2: frame lands in the hub, ZERO socket frames", async () => {
+        const { env, fake, factory } = await makeSelfWired();
+        try {
+            const { pi, commands: cmdMap, dispatch } = makePi();
+            factory(pi as never);
+            // /hub-start through the command surface: the REAL wiring, not a
+            // hand-built state — compose() defaults to createHubLocal with
+            // selfSessionId: () => state.selfSessionId (the tk-hai seam)
+            const startCmd = cmdMap.get("hub-start")!;
+            await startCmd("", { ui: { notify: () => {}, setWidget: () => {} } });
+            // the ordered dispatch: the capture handler writes
+            // state.selfSessionId BEFORE the reporter's session_start runs
+            dispatch("session_start", {} as never, makeSelfCtx("s-self-1"));
+            await Bun.sleep(50);
+
+            // POSITIVE: the self frame reached the local hub (roster row), so
+            // guard-2 delivered it through handleReport, not the outbox
+            await waitFor(async () => {
+                const snap = await listStatus(env.sock);
+                return Object.keys(snap.sessions).includes("s-self-1");
+            });
+            // NEGATIVE (mutation check): the self frame never touched the
+            // socket — deleting the state.selfSessionId write fails the
+            // roster assertion above (frame stuck in the reporter outbox),
+            // and no socket report traffic exists either way
+            expect(fake.reports).toEqual([]);
+        } finally {
+            delete process.env.OMP_HUB_SOCK;
+            void env;
+        }
+    });
+
+    it("hub inactive → socket frames (peer path); guard-2 kicks in only when hubActive", async () => {
+        // In-process, sessionId-mismatch is impossible BY DESIGN: facts and
+        // state.selfSessionId derive from the SAME ctx capture. The other
+        // guard-2 conjunct (hubActive) is the reachable discriminator here:
+        // before /hub-start the session reports like any peer over the
+        // socket; after it, the same session self-feeds. (The bare
+        // sessionId-mismatch decision is unit-covered in hub_reporter.test.ts.)
+        const { env, fake, factory } = await makeSelfWired();
+        try {
+            const { pi, commands: cmdMap, dispatch } = makePi();
+            factory(pi as never);
+            // session_start BEFORE /hub-start: reporter connects as a peer
+            dispatch("session_start", {} as never, makeSelfCtx("s-self-1"));
+            await waitFor(async () => fake.reports.length > 0);
+            const attach = fake.reports.find((r) => r.frame === "session_start" && (r.payload as { attached?: boolean }).attached === true);
+            expect(attach).toBeDefined();
+            expect((attach!.payload as { sessionId: string }).sessionId).toBe("s-self-1");
+
+            // /hub-start through the command surface: the REAL wiring, not a
+            // hand-built state — compose() defaults to createHubLocal with
+            // selfSessionId: () => state.selfSessionId (the tk-hai seam)
+            const startCmd = cmdMap.get("hub-start")!;
+            await startCmd("", { ui: { notify: () => {}, setWidget: () => {} } });
+
+            // now the SAME session self-feeds: re-announce (guard-4 upsert,
+            // registers the row in-process) then an input — socket silent
+            dispatch("session_start", {} as never, makeSelfCtx("s-self-1"));
+            dispatch("input", { type: "input", text: "self typed after start", source: "interactive" } as never, makeSelfCtx("s-self-1"));
+            await waitFor(async () => {
+                const snap = await listStatus(env.sock);
+                return Object.keys(snap.sessions).includes("s-self-1");
+            });
+            const afterSelf = fake.reports.length;
+            dispatch("input", { type: "input", text: "self typed again", source: "interactive" } as never, makeSelfCtx("s-self-1"));
+            await Bun.sleep(50);
+            expect(fake.reports.length).toBe(afterSelf);
+        } finally {
+            delete process.env.OMP_HUB_SOCK;
+            void env;
+        }
+    });
+});
+
+// =====================================================================
 // helpers
 // =====================================================================
+
+/** Poll until cond() holds or timeout — async pipeline, no fixed sleeps. */
+const waitFor = async (cond: () => Promise<boolean>, timeoutMs = 3000): Promise<void> => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (await cond()) return;
+        await Bun.sleep(5);
+    }
+    throw new Error("waitFor: condition not met within timeout");
+};
+
+/** Query the hub roster over the REAL hub.sock cmd path (op:"list"). */
+const listStatus = async (sockPath: string): Promise<{ sessions: Record<string, unknown> }> => {
+    const { connectHubClient } = await import("@yurifrl/hub/adapters/unix_socket");
+    const res = await connectHubClient({ socketPath: sockPath, client: "plugin-test" });
+    if (!res.ok) throw res.error;
+    try {
+        const reply = await res.value.cmd("list");
+        if (!reply.ok) throw reply.error;
+        return reply.value as { sessions: Record<string, unknown> };
+    } finally {
+        res.value.close();
+    }
+};
 
 /** A fake HubClient for order tests: records reports, never closes. */
 const makeFakeHubClient = () => {

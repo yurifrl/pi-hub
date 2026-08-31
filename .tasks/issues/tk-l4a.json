@@ -4,16 +4,16 @@
   "id": "tk-l4a",
   "title": "lib: wire selfSessionId at hub factory (guard-2 dead in real wiring)",
   "description": "",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "task",
   "owner": null,
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-31T20:22:24.905Z",
-  "updated_at": "2026-08-31T20:22:34.279Z",
+  "updated_at": "2026-08-31T21:44:34.712Z",
   "started_at": null,
-  "closed_at": null,
+  "closed_at": "2026-08-31T21:44:34.712Z",
   "due_at": null,
   "defer_until": null,
   "parent": null,
@@ -28,7 +28,7 @@
   "metadata": {},
   "dependencies": [],
   "dependency_count": 0,
-  "dependent_count": 0,
+  "dependent_count": 1,
   "comments": [
     {
       "id": "comment-1989029b-bc19-4da9-937c-178844c830c0",
@@ -36,7 +36,21 @@
       "author": "yuri",
       "text": "Found by tk-epx validator (P1, pre-existing at 5cd9fdf): state.selfSessionId initialized '' in extensions/hub.ts:140, never written anywhere -> guard-2 self-feed (local handleReport when sessionId === selfSessionId) is dead in real wiring. tk-hai comments state factory-closure intent. Spec: docs/05-omp-plugin.md self-feed + docs/01 layering. Fix: set selfSessionId from ExtensionContext at factory time (before reporter/commands register), test that guard-2 fires with real identity (not fake-injected).",
       "created_at": "2026-08-31T20:22:34.279Z"
+    },
+    {
+      "id": "comment-aebf46cf-2266-41eb-bb2b-be64c9ba7231",
+      "issue_id": "tk-l4a",
+      "author": "yuri",
+      "text": " Wired state.selfSessionId at the ctx-capture session_start handler in extensions/hub.ts (registered BEFORE reporter.register per tk-epx P0). Both state.selfSessionId (tk-hai closure seam) and the reporter's sessionFacts().sessionId now derive from the SAME ctx capture - one source of truth, documented in-code. Kept on shutdown: guard-2 contract is hubActive && sessionId === selfSessionId; inactive/dead session adds no risk, clearing adds nothing.\n\nTests (extensions/hub.test.ts §8): guard-2 through the REAL factory wiring via makePi ordered dispatch - /hub-start through the command surface (real createHubLocal composition, selfSessionId: () => state.selfSessionId), session_start ctx with identity, then: (a) self frame lands in the hub roster asserted via op:list over the REAL hub.sock, zero socket report traffic on the injected connect fake; (b) before /hub-start the same session reports as a peer (attach frame through the socket) - hubActive is the in-process discriminator since sessionId mismatch is impossible by design (shared ctx capture); bare mismatch stays unit-covered in hub_reporter.test.ts. Mutation check: removing the write fails both tests (frames stuck in outbox, roster empty) - verified.\n\nBonus fix: widget.ts connect() crashed real wiring (opts.subscribe optional with documented default never applied) - now defaults to hub_sock's real feed.\n\nbun test: 647 pass / 0 fail. tsc --noEmit: clean. Commit ac042f4 pushed to origin/matchday/tk-l4a. Leaving OPEN.",
+      "created_at": "2026-08-31T21:37:29.065Z"
+    },
+    {
+      "id": "comment-5b202f51-e9ff-4743-8874-1d148b86a40b",
+      "issue_id": "tk-l4a",
+      "author": "yuri",
+      "text": "VERIFIED PASS: (1) diff e34c45a..ac042f4 — write at hub.ts:262 inside session_start handler registered hub.ts:254, BEFORE reporter.register hub.ts:283 (ordering preserved). Only new write site; init still empty-string hub.ts:157. sessionFacts (hub.ts:186) reads lastCtx set in same handler = same capture, one source of truth. Shutdown handler does not clear — matches documented contract (guard-2 = hubActive && id match; hubStop resets active). (2) widget.ts:419 default opts.subscribe ?? subscribeHubFeed matches documented contract at widget.ts:328 (inject a fake for tests; default is hub_sock real feed); no error masking; in-scope since real wiring crashed without it. (3) bun test x3: 647 pass / 0 fail each; bunx tsc --noEmit clean. (4) INDEPENDENT mutation: removed the hub.ts:262 write via sed -> BOTH section-8 tests fail (self-feed roster test + hubActive discriminator test); restored byte-identical, git status clean, full suite green again. (5) End-to-end chain: pi dispatch session_start -> hub.ts:254 handler sets lastCtx:255 + state.selfSessionId:262 -> reporter handler hub_reporter.ts:413/366 facts=opts.sessionFacts() -> deliver hub_reporter.ts:265 -> isSelf hub_reporter.ts:258 (local.isActive && facts.sessionId === local.selfSessionId via hub.ts:182 seam) -> local.handleReport hub_reporter.ts:268 -> hub.ts:185 -> hub_local.ts:175 reportToRaw -> core.handleEvent -> status.json sessions; roster asserted via real hub.sock cmd list; zero fake.reports for self frame. Guard-2 dead claim resolved.",
+      "created_at": "2026-08-31T21:44:25.699Z"
     }
   ],
-  "comment_count": 1
+  "comment_count": 3
 }
