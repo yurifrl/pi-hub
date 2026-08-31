@@ -11,7 +11,7 @@
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:44.986Z",
-  "updated_at": "2026-08-31T05:20:00.000Z",
+  "updated_at": "2026-08-31T05:25:00.000Z",
   "started_at": null,
   "closed_at": "2026-08-31T05:20:00.000Z",
   "due_at": null,
@@ -59,7 +59,14 @@
       "author": "yuri",
       "text": "VERIFIED PASS \u2014 validator: HubWebDeps matches spec sketch (port 7749 default, stores{status,summaries,attention}, bus subscribe-only, commands=CommandSurface, logs.tail injected adapter not a new port); bind hostname 127.0.0.1 hardcoded server.ts:69, [::1] refused by test; stop() unsubscribes + closes SSE. Routes table complete: HTML placeholders (correct scope, real pages = tk-swx/tk-nbw), API writes via command surface with 400/404/409/502 mapping, 405+Allow, no CORS, no auth (v1). /stream stub = headers + snapshot frame only, no tk-szb creep. Theme via TOKEN_HEX, zero hardcoded hex. Live boot proof: GET /api/status 200 snapshot, POST /api/dismiss 200 {ok:true} op=attention action=dismiss by=web, loopback fetch OK. bun test web/ 21 pass, suite 113 pass, tsc 0.",
       "created_at": "2026-08-31T04:34:47.921Z"
+    },
+    {
+      "id": "comment-8f5aa297-f8f6-457e-bdb5-4aff36b3ae00",
+      "issue_id": "tk-uu2",
+      "author": "yuri",
+      "created_at": "2026-08-31T05:25:00.000Z",
+      "text": "POST-MERGE PASS: merge 933b404 + cleanup 216f6a3/8d423b4 \u2014 web/src/{server,html,snapshot,types}.ts, routes/table.ts, server.test.ts landed intact; only later touches = tsconfig comma fix + body-any test annotations. bun test web/ 21 pass 0 fail, workspace 209 pass 0 fail, tsc 0 errors, frozen-lockfile clean. Live boot with fake stores: GET /api/status 200 snapshot, POST /api/dismiss 200, loopback bind confirmed (non-loopback refused). No rendered pages yet \u2014 real console page = tk-swx, in flight."
     }
   ],
-  "comment_count": 3
+  "comment_count": 4
 }

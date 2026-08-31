@@ -11,7 +11,7 @@
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:02.403Z",
-  "updated_at": "2026-08-31T03:44:46.226Z",
+  "updated_at": "2026-08-31T05:17:01.265Z",
   "started_at": null,
   "closed_at": "2026-08-31T03:41:26.634Z",
   "due_at": null,
@@ -50,7 +50,14 @@
       "author": "yuri",
       "text": "POST-MERGE PASS: merge 45e4f1c scope verified — diff 4a9306d..45e4f1c contains exactly scaffold: 4 manifests (root @yurifrl/pi-hub w/ workspaces [lib cli web] + optional @earendil-works peerDeps/Meta; lib @yurifrl/hub barrel+./adapters/* exports; cli @yurifrl/hub-cli bin hub; web @yurifrl/hub-web), 18 skeleton .ts/.gitkeep comment-only files, .gitignore, bunfig.toml (hoisted linker), bun.lock, PLAN.md verification note. No out-of-scope hunks. Behavior on merged main: bun install --frozen-lockfile OK (3 pkgs, 32ms), node_modules/.bin/hub --help exits 0, import @yurifrl/hub = barrel OK, import @yurifrl/hub/adapters/unix_socket = adapters OK. No browser surface exists (scaffold-only, web/src = comments). Note (non-blocking): root package.json carries pi.extensions -> ./extensions/hub.ts which does not exist yet; outside docs/01 root contract lines 130-148, forward reference for composition root.",
       "created_at": "2026-08-31T03:44:46.225Z"
+    },
+    {
+      "id": "comment-3ec4e203-d00c-41d1-9e6b-ae3bf644c80b",
+      "issue_id": "tk-sne",
+      "author": "yuri",
+      "text": "probe",
+      "created_at": "2026-08-31T05:17:01.265Z"
     }
   ],
-  "comment_count": 3
+  "comment_count": 4
 }
