@@ -11,7 +11,7 @@
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:45.922Z",
-  "updated_at": "2026-08-31T12:33:04.837Z",
+  "updated_at": "2026-08-31T15:01:32.979Z",
   "started_at": null,
   "closed_at": null,
   "due_at": null,
@@ -52,7 +52,14 @@
       "author": "yuri",
       "text": "starting: web session detail + archive flavor + agent surface page (tk-nbw worker)",
       "created_at": "2026-08-31T12:31:20.016Z"
+    },
+    {
+      "id": "comment-abdc2105-a696-44a9-9355-0afd0ce02894",
+      "issue_id": "tk-nbw",
+      "author": "yuri",
+      "text": "tk-nbw worker progress: implemented session detail (full log via log LINK with bounded tail + ?since= cursor, phase timeline w/ phaseHistory fallback, tool bars, pinned send box), archive flavor (closed badge, final summary pinned, read-only, 409 on write via denied mapping), /archive index (month-grouped), /agent page (surface registry: watcher synthesized, pending file-backed w/ stale marking, unknown id → generic card, empty state w/o agent). Ports (logs/archive/surfaces) async, injected. Tests: 78 web (17 renderer + 25 route + 1 live smoke) / 358 workspace green, tsc clean. Committed ab87d71. Awaiting validation.",
+      "created_at": "2026-08-31T15:01:32.978Z"
     }
   ],
-  "comment_count": 2
+  "comment_count": 3
 }
