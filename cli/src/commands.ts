@@ -20,6 +20,9 @@ import { cmdTool } from "./cmd_tool";
 import { cmdSpawn } from "./cmd_spawn";
 import { cmdKill } from "./cmd_kill";
 import { cmdArchiveClose, cmdArchiveList } from "./cmd_archive";
+import { cmdLog } from "./cmd_log";
+import { cmdSummaries } from "./cmd_summaries";
+import { cmdWatch } from "./cmd_watch";
 
 /** Commander grammar keeps `[id] <text...>` unsplit — the body owns the split. */
 export type MixedTail = { head: string | undefined; tail: string[] };
@@ -63,18 +66,18 @@ export const boardBody: CommandBody = async (ctx): Promise<void> => {
   await runBoard(ctx);
 };
 
-export const watchBody: CommandBody = () => {
-  throw new NotImplemented("hub watch", "tk-2xf");
+export const watchBody: CommandBody = async (ctx: CommandContext): Promise<void> => {
+  await cmdWatch(ctx);
 };
 
-// ---- read-only commands (socket-free; tk-tku delivered archive listing) ----
+// ---- read-only commands (socket-free) --------------------------------------
 
-export const logBody: CommandBody = () => {
-  throw new NotImplemented("hub log", "tk-tku");
+export const logBody: CommandBody = async (ctx, id, opts): Promise<void> => {
+  await cmdLog(ctx, (opts as { f?: boolean } | undefined)?.f === true, id as string | undefined);
 };
 
-export const summariesBody: CommandBody = () => {
-  throw new NotImplemented("hub summaries", "tk-tku");
+export const summariesBody: CommandBody = async (ctx, id, opts): Promise<void> => {
+  await cmdSummaries(ctx, id as string | undefined, (opts as { tail?: number } | undefined)?.tail);
 };
 
 export const archiveListBody: CommandBody = async (ctx: CommandContext): Promise<void> => {

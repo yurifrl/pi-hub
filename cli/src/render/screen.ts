@@ -142,19 +142,7 @@ export class ScreenBuffer {
   }
 
   private renderRow(cells: Cell[]): string {
-    let out = "";
-    let sgr = "";
-    for (const cell of cells) {
-      const { on, off } = cellSgr(cell, this.level);
-      if (on !== sgr) {
-        out += on.length > 0 ? on : "\x1b[0m";
-        sgr = on;
-      }
-      out += cell.ch;
-      if (off.length > 0) sgr = "";
-    }
-    if (sgr.length > 0) out += "\x1b[0m";
-    return out;
+    return cellsToAnsi(cells, this.level);
   }
 
   /** Enter alt-screen: smcup + hide cursor; next flush paints fully. */
@@ -195,6 +183,28 @@ const cellsEqual = (a: Cell[], b: Cell[]): boolean => {
     if (x.ch !== y.ch || x.fg !== y.fg || x.bg !== y.bg || x.bold !== y.bold) return false;
   }
   return true;
+};
+
+/**
+ * Encode one painted row to an ANSI string at the given color level — the
+ * scroll surfaces (log, summaries, watch's piped static frame) print rows
+ * directly instead of diffing through the buffer. screen.ts still owns the
+ * bytes: same SGR discipline as the buffer's row renderer.
+ */
+export const cellsToAnsi = (cells: Cell[], level: ColorLevel): string => {
+  let out = "";
+  let sgr = "";
+  for (const cell of cells) {
+    const { on, off } = cellSgr(cell, level);
+    if (on !== sgr) {
+      out += on.length > 0 ? on : "\x1b[0m";
+      sgr = on;
+    }
+    out += cell.ch;
+    if (off.length > 0) sgr = "";
+  }
+  if (sgr.length > 0) out += "\x1b[0m";
+  return out;
 };
 
 /** Build a Cell row from plain text (no styling). */

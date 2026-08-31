@@ -86,7 +86,7 @@ sub("assign [id] <task...>", "give a session work").action((id: string | undefin
 
 sub("log [-f] [id]", "raw session stream")
   .option("-f", "follow appended lines")
-  .action(invoke(logBody));
+  .action((id: string | undefined, opts: { f?: boolean }) => invoke(logBody)(id, opts));
 
 sub("summaries [id]", "AI summary rail")
   .option("--tail <n>", "last N lines", parsePositiveInt)
