@@ -4,14 +4,14 @@
   "id": "tk-uu2",
   "title": "web: Bun server startHubWeb, routes table, 127.0.0.1 bind",
   "description": "",
-  "status": "open",
+  "status": "in_progress",
   "priority": 2,
   "issue_type": "task",
   "owner": null,
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:44.986Z",
-  "updated_at": "2026-08-30T19:06:07.541Z",
+  "updated_at": "2026-08-31T04:27:46.684Z",
   "started_at": null,
   "closed_at": null,
   "due_at": null,
@@ -37,7 +37,7 @@
     }
   ],
   "dependency_count": 1,
-  "dependent_count": 0,
+  "dependent_count": 1,
   "comments": [
     {
       "id": "comment-d81470c1-8929-4c15-96f9-2337604ad6cb",
@@ -45,7 +45,14 @@
       "author": "yuri",
       "text": "Spec: docs/04-web.md Routes table (11 routes incl /api/answer /api/assign /api/send /api/dismiss /api/status /stream), Server section (startHubWeb port shape, 127.0.0.1 default bind, v1 local-only no auth tradeoff). Port contracts: docs/01-architecture.md StatusStore SummaryStore AttentionStore.",
       "created_at": "2026-08-30T19:03:50.157Z"
+    },
+    {
+      "id": "comment-b23e6b52-d3e4-42aa-937b-45b706fc88a7",
+      "issue_id": "tk-uu2",
+      "author": "yuri",
+      "text": "web: implemented startHubWeb + routes table + 127.0.0.1 bind (commit fad372e).\n\nFiles:\n- web/src/server.ts: startHubWeb(deps) - Bun.serve hostname 127.0.0.1 only (non-configurable v1), port default 7749; bus subscribe on start, unsubscribe + close all SSE conns on stop(); API writes dispatch through injected CommandSurface (answer/assign/send/attention-dismiss ops, by web); no CORS, no auth (v1 tradeoff per docs/04)\n- web/src/routes/table.ts: full route table - HTML GET / /session/:id /agent /archive /archive/:id (placeholders, CSP, 404 page listing open sessions for unknown id); POST /api/answer|assign|send|dismiss (JSON in/out, 400 malformed/missing fields, HubError to HTTP map: unknown-session 404, denied 409); GET /api/status (snapshot payload); GET /stream SSE stub with initial snapshot event, conns tracked for stop(); 405 + Allow on method mismatch; 404 unknown paths\n- web/src/snapshot.ts: buildSnapshot {v, digest, attention, sessions} - resolved items filtered, closed sessions excluded; agent digest or synthesized counts line\n- web/src/html.ts: placeholder renderers themed from lib TOKEN_HEX (no hardcoded hex), v1 CSP\n- web/src/types.ts: HubWebDeps / SessionDigest / SnapshotPayload / SseConn / HubWebLogs port shapes\n- web/src/server.test.ts: 21 tests, fetch against 127.0.0.1 with temp data root (never real hub dir)\n- tsconfig.json: include web + cli (workspace-wide tsc)\n\nDecisions:\n- dismiss goes as cmd frame attention {action dismiss, id} per docs/03 board d-key decision (no dismiss op in locked op list)\n- send args {target, text}, assign {id, task} per docs/03 cmd frames\n- SessionDigest = {id, session: SessionRecord} - minimal interpretation of spec SessionDigest[]; snapshot shape shared by /api/status and snapshot SSE event\n- /stream: snapshot-only stub (spec-sanctioned); full delta fan-out is tk-szb\n- bind verified by IPv6 ::1 fetch failing + loopback succeeding\n\nTest output: bun test 113 pass / 0 fail (21 web); bunx tsc --noEmit exit 0 workspace-wide. server.stop() verified to release port (rebind same port succeeds).",
+      "created_at": "2026-08-31T04:27:46.684Z"
     }
   ],
-  "comment_count": 1
+  "comment_count": 2
 }
