@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AttentionStore, EventBus, HubEvent, SessionRecord, StatusFile, StatusStore, SummaryStore, CommandSurface, CommandRequest, CommandReply } from "@yurifrl/hub";
 import { startHubWeb } from "./server";
-import type { HubWebDeps } from "./types";
+import type { HubWebDeps, HubWebLogs, HubWebArchive } from "./types";
 
 // ---- temp data root (never the real ~/.hub) ----
 
@@ -116,6 +116,9 @@ const bus: EventBus = {
 // command surface recording dispatch calls
 type Call = { req: CommandRequest; reply: CommandReply };
 const calls: Call[] = [];
+// command surface recording dispatch calls; send to a closed session is
+// refused by the hub (docs/04 §Routes: POSTing to a closed/archived session
+// → 409 "session closed") — the fake mirrors that refusal
 const commands: CommandSurface = {
   dispatch: async (req) => {
     const reply: CommandReply =
@@ -123,7 +126,9 @@ const commands: CommandSurface = {
         ? { ok: true, value: { answered: true, id: req.args.id } }
         : req.op === "attention" && req.args.action === "dismiss" && req.args.id === "ghost"
           ? { ok: false, error: { code: "unknown-session", message: "unknown item", retryable: false } }
-          : { ok: true, value: null };
+          : req.op === "send" && req.args.target === "closed1"
+            ? { ok: false, error: { code: "denied", message: "session closed", retryable: false } }
+            : { ok: true, value: null };
     calls.push({ req, reply });
     return reply;
   },
@@ -132,7 +137,40 @@ const commands: CommandSurface = {
 
 // ---- server under test ----
 
-const deps: HubWebDeps = { port: 0, stores: { status: statusStore, summaries: summaryStore, attention: attentionStore }, bus, commands };
+// log + archive ports (docs/04 §Server: the web package reads log/archive
+// files through injected ports — fakes here, never the real ~/.hub)
+const logs: HubWebLogs = {
+  tail: async (id, since) => {
+    const all = [
+      { t: "2026-08-30T14:02:00.000Z", sessionId: id, kind: "system", text: "session_start attached=true" },
+      { t: "2026-08-30T14:03:00.000Z", sessionId: id, kind: "prompt", text: "deploy canary to staging" },
+      { t: "2026-08-30T14:04:00.000Z", sessionId: id, kind: "tool", text: "gh api …", meta: { tool: "Bash" } },
+      { t: "2026-08-30T14:04:800.000Z", sessionId: id, kind: "result", text: "ok", meta: { tool: "Bash", ok: true, durationMs: 800 } },
+      { t: "2026-08-30T14:05:00.000Z", sessionId: id, kind: "result", text: "boom", meta: { tool: "Bash", ok: false, durationMs: 400 } },
+      { t: "2026-08-30T14:06:00.000Z", sessionId: id, kind: "message", text: "canary deployed" },
+    ];
+    return since === undefined ? all : all.filter((l) => Date.parse(l.t) > Date.parse(since));
+  },
+};
+
+const archive: HubWebArchive = {
+  list: async () => [
+    { id: "closed1", closedAt: "2026-08-29T18:44:00.000Z", closedBy: "cli", finalSummary: "deployed canary 3/3, clean", path: "archive/2026-08/closed1.json" },
+  ],
+  read: async (id) =>
+    id !== "closed1"
+      ? null
+      : {
+          id,
+          record: session({ status: "closing", phase: "idle", phaseHistory: [{ phase: "working", at: "2026-08-29T14:02:00.000Z" }, { phase: "idle", at: "2026-08-29T16:00:00.000Z" }] }),
+          closedAt: "2026-08-29T18:44:00.000Z",
+          closedBy: "cli",
+          finalSummary: "deployed canary 3/3, clean",
+          resolutions: [{ id: "att-0", sessionId: id, kind: "question", text: "registry?", createdAt: "2026-08-29T15:00:00.000Z", resolvedAt: "2026-08-29T15:01:00.000Z", answer: "ghcr" }],
+        },
+};
+
+const deps: HubWebDeps = { port: 0, stores: { status: statusStore, summaries: summaryStore, attention: attentionStore }, bus, commands, logs, archive };
 let stop: (() => Promise<void>) | null = null;
 let port = 0;
 const url = (path: string): string => `http://127.0.0.1:${port}${path}`;
@@ -269,10 +307,37 @@ describe("HTML routes", () => {
     expect(body).toContain("att-1");
   });
 
-  it("GET /session/:id renders a known session", async () => {
+  it("GET /session/:id renders the full detail (log tail, timeline, tool bars, send box)", async () => {
     const res = await fetch(url("/session/tilt"));
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("session tilt");
+    const body = await res.text();
+    expect(body).toContain("tilt");
+    expect(body).toContain("linked, not embedded");
+    expect(body).toContain("deploy canary to staging"); // log entry from the port
+    expect(body).toContain("phase-now");
+    expect(body).toContain("timeline");
+    expect(body).toContain("tool bars");
+    expect(body).toContain("send-form");
+  });
+
+  it("GET /session/:id?since= returns only entries strictly newer than the cursor", async () => {
+    const full = await (await fetch(url("/session/tilt"))).text();
+    expect(full).toContain("deploy canary to staging");
+    const res = await fetch(url("/session/tilt?since=2026-08-30T14:03:00.000Z"));
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).not.toContain("deploy canary to staging"); // at the cursor — excluded
+    expect(body).toContain("canary deployed"); // newer — included
+  });
+
+  it("archived flavor: /session/:id over a closed session renders closed badge, final summary, no send box", async () => {
+    const res = await fetch(url("/session/closed1"));
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("ARCHIVED");
+    expect(body).toContain("deployed canary 3/3, clean");
+    expect(body).toContain("closed — read-only");
+    expect(body).not.toContain("send-form");
   });
 
   it("unknown session id → 404 page listing open sessions", async () => {
@@ -283,12 +348,32 @@ describe("HTML routes", () => {
     expect(body).toContain("tilt");
   });
 
-  it("GET /agent, /archive, /archive/:id render 200", async () => {
-    for (const path of ["/agent", "/archive", "/archive/closed1"]) {
+  it("GET /agent, /archive render 200; /archive/:id serves the archived record or 404s", async () => {
+    for (const path of ["/agent", "/archive"]) {
       const res = await fetch(url(path));
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toContain("text/html");
     }
+    const index = await (await fetch(url("/archive"))).text();
+    expect(index).toContain("closed1");
+    expect(index).toContain("2026-08");
+    const detail = await fetch(url("/archive/closed1"));
+    expect(detail.status).toBe(200);
+    const body = await detail.text();
+    expect(body).toContain("ARCHIVED");
+    expect(body).toContain("deployed canary 3/3, clean");
+    // not archived → 404
+    expect((await fetch(url("/archive/ghost"))).status).toBe(404);
+  });
+
+  it("POST /api/send to an archived session → 409 session closed", async () => {
+    const res = await fetch(url("/api/send"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: "closed1", text: "hello" }),
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "session closed" });
   });
 
   it("sets the v1 CSP on HTML pages", async () => {
