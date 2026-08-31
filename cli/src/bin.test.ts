@@ -11,12 +11,65 @@ import { join } from "node:path";
 import { run } from "./bin";
 
 let dir: string;
+let stopHub: (() => void) | null = null;
+
+/** Fake hub for full-body tests (same contract as hub_socket.test.ts). */
+const startHub = (opts: { onCmd?: (frame: Record<string, unknown>) => unknown } = {}): string => {
+  const sockPath = join(dir, "fake.sock");
+  const hello = JSON.stringify({
+    v: 1,
+    ch: "hello",
+    hub: { version: 1, startedAt: "2026-08-31T00:00:00.000Z" },
+  });
+  const buffers = new Map<unknown, string>();
+  const server = Bun.listen({
+    unix: sockPath,
+    socket: {
+      open(socket) {
+        buffers.set(socket, "");
+      },
+      data(socket, data) {
+        let buffer = (buffers.get(socket) ?? "") + new TextDecoder().decode(data);
+        let idx: number;
+        while ((idx = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 1);
+          if (line.trim().length === 0) continue;
+          let frame: Record<string, unknown>;
+          try {
+            frame = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (frame.ch === "hello") {
+            socket.write(hello + "\n");
+            continue;
+          }
+          if (frame.ch === "cmd") {
+            const result = opts.onCmd?.(frame);
+            if (result === undefined) continue;
+            socket.write(JSON.stringify({ v: 1, ch: "reply", cmdId: frame.cmdId, ok: true, result }) + "\n");
+          }
+        }
+        buffers.set(socket, buffer);
+      },
+      close(socket) {
+        buffers.delete(socket);
+      },
+      error: () => {},
+    },
+  });
+  stopHub = () => server.stop(true);
+  return sockPath;
+};
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "hub-bin-test-"));
 });
 
 afterEach(() => {
+  stopHub?.();
+  stopHub = null;
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -138,22 +191,32 @@ describe("bin.run — usage failures (exit 1)", () => {
 });
 
 describe("bin.run — config resolution through the tree", () => {
-  it("--config file feeds config.sock to the dispatch context (stub body records nothing, but config errors surface first)", async () => {
+  it("--config file feeds config.sock to the dispatch context (answer reaches the fake hub at that socket)", async () => {
     const path = join(dir, "c.json");
-    writeFileSync(path, JSON.stringify({ replyTimeoutMs: 1234, sock: join(dir, "s.sock") }));
-    const { code } = await capture(["--config", path, "answer", "att-1", "hello"]);
-    // stub body → NotImplemented → usage exit 1; config itself resolved fine
-    expect(code).toBe(1);
+    const seenOps: string[] = [];
+    const sockPath = startHub({
+      onCmd: (frame) => {
+        seenOps.push(String(frame.op));
+        return frame.op === "list" ? { sessions: {}, attention: [{ id: "att-1", sessionId: "s-x" }] } : {};
+      },
+    });
+    writeFileSync(path, JSON.stringify({ replyTimeoutMs: 1234, sock: sockPath }));
+    const { code, out } = await capture(["--config", path, "--json", "answer", "att-1", "hello"]);
+    expect(seenOps).toContain("answer");
+    expect(code).toBe(0);
+    const env = JSON.parse(out);
+    expect(env.type).toBe("snapshot");
+    expect(env.data.answered).toBe(true);
   });
 
-  it("valid config + stub body → usage envelope naming the owner task", async () => {
+  it("valid config + unknown item → not_found envelope, exit 1", async () => {
     const path = join(dir, "c.json");
-    writeFileSync(path, "{}");
+    const sockPath = startHub({ onCmd: () => ({ sessions: {}, attention: [] }) });
+    writeFileSync(path, JSON.stringify({ sock: sockPath }));
     const { code, out } = await capture(["--config", path, "--json", "send", "s-1", "hello"]);
     expect(code).toBe(1);
     const env = JSON.parse(out);
-    expect(env.error.code).toBe("usage");
-    expect(env.error.message).toContain("tk-tku");
+    expect(env.error.code).toBe("not_found");
   });
 });
 
@@ -213,8 +276,8 @@ describe("subprocess — hub binary exit codes (docs/03 §Exit codes table)", ()
     expect(code).toBe(1);
   });
 
-  it("hub answer with missing socket → stub path: usage 1 (socket wiring verified in hub_socket tests)", async () => {
+  it("hub answer with missing socket → unavailable envelope, exit 2 (real body path)", async () => {
     const { code } = await spawnHub(["answer", "att-1", "hi"]);
-    expect(code).toBe(1);
+    expect(code).toBe(2);
   });
 });

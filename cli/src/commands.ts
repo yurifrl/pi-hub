@@ -1,19 +1,32 @@
 // cli/src/commands.ts — command bodies (docs/03-cli.md §bin: command bodies
 // live here; bin.ts composes and dispatches, contains no domain logic).
 //
-// tk-dfr delivers the plumbing: each body receives a typed context (socket
-// client + file reader + config + output policy) and is wired into the tree.
-// Bodies whose wire/format logic belongs to later tasks (tk-tku subcommand
-// semantics, tk-aum/tk-avx/tk-2xf render/screens) throw NotImplemented — a
-// typed usage-class error that bin maps to the standard usage envelope, so
-// the tree, config, envelope, and exit-code layers are exercised end to end
-// before those tasks land.
+// Each body receives a typed context (socket client + file reader + io +
+// config + output policy) and is wired into the tree. Mutations and archive
+// listing are real implementations (tk-tku); the board family and remaining
+// read-only views belong to later tasks (tk-avx/tk-2xf render/screens) and
+// throw NotImplemented — a typed usage-class error bin maps to the standard
+// usage envelope.
 
 import type { HubCliConfig } from "./config";
 import type { HubFiles } from "./files";
 import type { OutputPolicy } from "./output";
+import type { CommandIo } from "./io";
+import { cmdAnswer } from "./cmd_answer";
+import { cmdAssign } from "./cmd_assign";
+import { cmdSend } from "./cmd_send";
+import { cmdTool } from "./cmd_tool";
+import { cmdSpawn } from "./cmd_spawn";
+import { cmdKill } from "./cmd_kill";
+import { cmdArchiveClose, cmdArchiveList } from "./cmd_archive";
 
-/** Typed placeholder for bodies owned by later tasks (see module comment). */
+/** Commander grammar keeps `[id] <text...>` unsplit — the body owns the split. */
+export type MixedTail = { head: string | undefined; tail: string[] };
+
+/** Commander grammar keeps `[id] <text...>` unsplit — the body owns the split. */
+export const mixedTail = (head: string | undefined, tail: string[]): MixedTail => ({ head, tail });
+
+/** Typed placeholder for bodies owned by later tasks (tk-avx board, tk-2xf watch). */
 export class NotImplemented extends Error {
   readonly op: string;
   constructor(op: string, owner: string) {
@@ -22,13 +35,22 @@ export class NotImplemented extends Error {
   }
 }
 
+/** One-shot hub.sock cmd/reply, normalized: result or HubError (never throws). */
+export type CmdFn = (
+  op: string,
+  args: Record<string, unknown>,
+  timeoutMs?: number,
+) => Promise<{ result: unknown } | { error: { code: string; message: string } }>;
+
 /** Everything a command body may touch — built once in bin.ts (§bin composition root). */
 export type CommandContext = {
   config: HubCliConfig;
   policy: OutputPolicy;
   files: HubFiles;
+  /** terminal surface for prompts, pickers, confirm lines (docs/03 §Output policies) */
+  io: CommandIo;
   /** one-shot hub.sock cmd/reply — see hub_socket.ts */
-  cmd: (op: string, args: Record<string, unknown>, timeoutMs?: number) => Promise<{ result: unknown } | { error: { code: string; message: string } }>;
+  cmd: CmdFn;
 };
 
 export type CommandBody = (ctx: CommandContext, ...args: never[]) => Promise<void> | void;
@@ -43,7 +65,7 @@ export const watchBody: CommandBody = () => {
   throw new NotImplemented("hub watch", "tk-2xf");
 };
 
-// ---- read-only commands (socket-free; wire logic tk-tku) --------------------
+// ---- read-only commands (socket-free; tk-tku delivered archive listing) ----
 
 export const logBody: CommandBody = () => {
   throw new NotImplemented("hub log", "tk-tku");
@@ -53,38 +75,38 @@ export const summariesBody: CommandBody = () => {
   throw new NotImplemented("hub summaries", "tk-tku");
 };
 
-export const archiveListBody: CommandBody = () => {
-  throw new NotImplemented("hub archive", "tk-tku");
+export const archiveListBody: CommandBody = async (ctx: CommandContext): Promise<void> => {
+  await cmdArchiveList(ctx);
 };
 
-// ---- hub-backed mutations (cmd frames over hub.sock; tk-tku) ----------------
+// ---- hub-backed mutations (cmd frames over hub.sock) ------------------------
 
-export const answerBody: CommandBody = () => {
-  throw new NotImplemented("hub answer", "tk-tku");
+export const answerBody: CommandBody = async (ctx, item, textParts): Promise<void> => {
+  await cmdAnswer(ctx, item as string, textParts as string[]);
 };
 
-export const assignBody: CommandBody = () => {
-  throw new NotImplemented("hub assign", "tk-tku");
+export const assignBody: CommandBody = async (ctx, tail: MixedTail): Promise<void> => {
+  await cmdAssign(ctx, tail.head, tail.tail);
 };
 
-export const sendBody: CommandBody = () => {
-  throw new NotImplemented("hub send", "tk-tku");
+export const sendBody: CommandBody = async (ctx, tail: MixedTail): Promise<void> => {
+  await cmdSend(ctx, tail.head, tail.tail);
 };
 
-export const toolBody: CommandBody = () => {
-  throw new NotImplemented("hub tool", "tk-tku");
+export const toolBody: CommandBody = async (ctx, id, tool, jsonArg, opts): Promise<void> => {
+  await cmdTool(ctx, id as string, tool as string, jsonArg as string | undefined, (opts as { wait?: number })?.wait);
 };
 
-export const spawnBody: CommandBody = () => {
-  throw new NotImplemented("hub spawn", "tk-tku");
+export const spawnBody: CommandBody = async (ctx, opts): Promise<void> => {
+  await cmdSpawn(ctx, (opts ?? {}) as { name?: string; model?: string });
 };
 
-export const killBody: CommandBody = () => {
-  throw new NotImplemented("hub kill", "tk-tku");
+export const killBody: CommandBody = async (ctx, id, opts): Promise<void> => {
+  await cmdKill(ctx, id as string, (opts ?? {}) as { yes?: boolean });
 };
 
-export const archiveCloseBody: CommandBody = () => {
-  throw new NotImplemented("hub archive <id>", "tk-tku");
+export const archiveCloseBody: CommandBody = async (ctx, id): Promise<void> => {
+  await cmdArchiveClose(ctx, id as string);
 };
 
 export const agentBody: CommandBody = () => {
