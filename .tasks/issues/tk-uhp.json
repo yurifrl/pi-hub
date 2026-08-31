@@ -11,14 +11,14 @@
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:14.823Z",
-  "updated_at": "2026-08-31T05:03:57.278Z",
+  "updated_at": "2026-08-31T05:06:32.413Z",
   "started_at": null,
-  "closed_at": "2026-08-31T04:26:13.149Z",
+  "closed_at": "2026-08-31T05:06:32.413Z",
   "due_at": null,
   "defer_until": null,
   "parent": null,
   "labels": [],
-  "notes": "Spec: docs/02-data-contracts.md §status.json (invariants: atomic tmp+rename, single-writer, version field, unknown-fields-ignored), §logs, §summaries.jsonl (kind: summary|resolution), §Versioning. Port: docs/01-architecture.md §Core abstractions (StatusStore, SummaryStore, AttentionStore interfaces).",
+  "notes": "Spec: docs/02-data-contracts.md \u00a7status.json (invariants: atomic tmp+rename, single-writer, version field, unknown-fields-ignored), \u00a7logs, \u00a7summaries.jsonl (kind: summary|resolution), \u00a7Versioning. Port: docs/01-architecture.md \u00a7Core abstractions (StatusStore, SummaryStore, AttentionStore interfaces).",
   "design": null,
   "acceptance_criteria": null,
   "estimated_minutes": null,
@@ -43,23 +43,30 @@
       "id": "comment-12e499e2-96d8-4de3-8404-01fcd5d4c3f7",
       "issue_id": "tk-uhp",
       "author": "yuri",
-      "text": "Store layer implemented on matchday/tk-uhp (commit 9f896af).\n\njson_store.ts — StatusStore over status.json:\n- atomic rewrite: serialize (version pinned as first meta field) -> status.json.tmp -> fsync -> rename(2); readers see previous or next complete object only\n- corrupt/missing: corrupt file = error Result, never silent reset; missing file seeds skeleton on update() (boot path); read() of missing file = unavailable-hub error\n- concurrent in-process update() calls serialized on a promise chain (flock is host responsibility); throwing mutate caught as denied error, chain survives\n- removeStaleTmp: sweeps crashed writer's status.json.tmp (hub-start hook)\n- unknown fields tolerated at every level and preserved across updates\n\njsonl_store.ts — SummaryStore port + log half:\n- append = single write(2) at O_APPEND per line, file+parent auto-created\n- torn tail (no trailing newline) discarded on read; invalid middle lines skipped; files never rewritten/compacted\n- 2KB text truncation on write (truncateLogText, writer duty; reader tolerates longer)\n- log lines use docs/02 vocabulary prompt|tool|result|think|message|system, t = UTC string on disk; session_start system line carries attached flag + kind in meta\n- tail(n, filter)/tailLog/replayLog narrow before slicing; summaries filter via domain matchesSummary\n\nlib/index.test.ts: node/bun std imports allowed at adapter edge only (docs/01 import matrix) — same edit as tk-wmx for clean merge.\n\nVerification: bun test lib/ = 123 pass (92 pre-existing + 31 new), 0 fail. bunx tsc --noEmit clean. Tests run against mkdtemp dirs, never real ~/.hub. Public surface exactly the port shapes + StoredLogEntry/LogFilter/LogStore/ truncateLogText/removeStaleTmp helpers in adapters only.",
+      "text": "Store layer implemented on matchday/tk-uhp (commit 9f896af).\n\njson_store.ts \u2014 StatusStore over status.json:\n- atomic rewrite: serialize (version pinned as first meta field) -> status.json.tmp -> fsync -> rename(2); readers see previous or next complete object only\n- corrupt/missing: corrupt file = error Result, never silent reset; missing file seeds skeleton on update() (boot path); read() of missing file = unavailable-hub error\n- concurrent in-process update() calls serialized on a promise chain (flock is host responsibility); throwing mutate caught as denied error, chain survives\n- removeStaleTmp: sweeps crashed writer's status.json.tmp (hub-start hook)\n- unknown fields tolerated at every level and preserved across updates\n\njsonl_store.ts \u2014 SummaryStore port + log half:\n- append = single write(2) at O_APPEND per line, file+parent auto-created\n- torn tail (no trailing newline) discarded on read; invalid middle lines skipped; files never rewritten/compacted\n- 2KB text truncation on write (truncateLogText, writer duty; reader tolerates longer)\n- log lines use docs/02 vocabulary prompt|tool|result|think|message|system, t = UTC string on disk; session_start system line carries attached flag + kind in meta\n- tail(n, filter)/tailLog/replayLog narrow before slicing; summaries filter via domain matchesSummary\n\nlib/index.test.ts: node/bun std imports allowed at adapter edge only (docs/01 import matrix) \u2014 same edit as tk-wmx for clean merge.\n\nVerification: bun test lib/ = 123 pass (92 pre-existing + 31 new), 0 fail. bunx tsc --noEmit clean. Tests run against mkdtemp dirs, never real ~/.hub. Public surface exactly the port shapes + StoredLogEntry/LogFilter/LogStore/ truncateLogText/removeStaleTmp helpers in adapters only.",
       "created_at": "2026-08-31T04:26:13.149Z"
     },
     {
       "id": "comment-825c8c5b-d51f-4b66-b103-b0bef3b28aff",
       "issue_id": "tk-uhp",
       "author": "yuri",
-      "text": "VERIFIED PASS — validator: json_store atomic seq (open tmp → writeFile → handle.sync() → rename), version-first pinned by regex test, corrupt → error Result never silent reset, update() promise-chain serialization with throw recovery (25-way test), removeStaleTmp per docs/02. jsonl_store O_APPEND single write, torn-tail discarded never rewritten, 2KB truncation pinned at 2048, tail(n,f) narrows before slicing, UTC-string t on disk, doc-vocab log kinds with session_start meta. Import matrix: node:fs/promises + node:path edge I/O only, no @earendil, no barrel. lib/index.test.ts relaxation matches docs/01 matrix (adapters = sanctioned std edge). bun test lib/ 123 pass 0 fail (1341 expects), tsc EXIT=0, mkdtemp isolation with zero ~/.hub refs. No browser surface (lib-only).",
+      "text": "VERIFIED PASS \u2014 validator: json_store atomic seq (open tmp \u2192 writeFile \u2192 handle.sync() \u2192 rename), version-first pinned by regex test, corrupt \u2192 error Result never silent reset, update() promise-chain serialization with throw recovery (25-way test), removeStaleTmp per docs/02. jsonl_store O_APPEND single write, torn-tail discarded never rewritten, 2KB truncation pinned at 2048, tail(n,f) narrows before slicing, UTC-string t on disk, doc-vocab log kinds with session_start meta. Import matrix: node:fs/promises + node:path edge I/O only, no @earendil, no barrel. lib/index.test.ts relaxation matches docs/01 matrix (adapters = sanctioned std edge). bun test lib/ 123 pass 0 fail (1341 expects), tsc EXIT=0, mkdtemp isolation with zero ~/.hub refs. No browser surface (lib-only).",
       "created_at": "2026-08-31T04:33:09.218Z"
     },
     {
       "id": "comment-b9faec24-0dfb-4920-9a85-a5d5cc041f96",
       "issue_id": "tk-uhp",
       "author": "yuri",
-      "text": "POST-MERGE PASS: merge 88b7521 — diff f810913..88b7521 = store files + tests + tracker only. bun test lib/ 123 pass 0 fail on main, tsc 0. Atomic seq and version-first pinning verified in merged file. (Side note: a malformed closed_at written during conflict resolution briefly wedged the tk file backend — schema invariant violation, fixed. Store layer itself unaffected.)",
+      "text": "POST-MERGE PASS: merge 88b7521 \u2014 diff f810913..88b7521 = store files + tests + tracker only. bun test lib/ 123 pass 0 fail on main, tsc 0. Atomic seq and version-first pinning verified in merged file. (Side note: a malformed closed_at written during conflict resolution briefly wedged the tk file backend \u2014 schema invariant violation, fixed. Store layer itself unaffected.)",
       "created_at": "2026-08-31T05:03:57.278Z"
+    },
+    {
+      "id": "comment-fcd0482c-06b7-489f-93cd-a8bacc987c03",
+      "issue_id": "tk-uhp",
+      "author": "yuri",
+      "text": "POST-MERGE PASS: merge 88b7521 (HEAD verified). (1) git diff f810913..88b7521 clean and exactly in-scope: A lib/adapters/json_store.test.ts, A lib/adapters/jsonl_store.test.ts, M lib/adapters/json_store.ts, M lib/adapters/jsonl_store.ts, M lib/index.test.ts (adapter-edge node/bun import relaxation only), plus .tasks tracker files (tk-uhp closed + validator evidence) \u2014 zero stray source hunks. (2) Gates on merged main: bun test lib/ = 123 pass / 0 fail / 1341 expect() across 9 files; bunx tsc --noEmit = exit 0. (3) Spot-verify in merged lib/adapters/json_store.ts: atomic sequence open tmp -> handle.writeFile(serialize(status)) -> handle.sync() -> close -> rename(tmpPath, statusPath) (lines ~76-85); version-first pinning survived \u2014 serialize destructures {version, ...rest} and re-emits version as first key, pinned by test \"serialized file starts with the version field\" (regex /^\\{\\s*\"version\":/). jsonl_store append-only O_APPEND single-write intact on main. (4) No browser surface \u2014 lib-only change. Note: tk file backend threw {kind:repository,operation:cli} on all reads/writes during validation; tk doctor now Healthy (schema 2) after concurrent fix; this comment is the definitive POST-MERGE record.",
+      "created_at": "2026-08-31T05:06:32.413Z"
     }
   ],
-  "comment_count": 3
+  "comment_count": 4
 }
