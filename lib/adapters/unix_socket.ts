@@ -79,10 +79,12 @@ type Connection = {
     sock: net.Socket;
     /** subscribed clients receive unsolicited event frames (docs/02 §Event frames) */
     subscribed: boolean;
-    /** client id from the hello frame (cli | web | plugin | agent) — the
-     * deliverTo bridge targets plugin clients by this id (docs/02 §hub.sock:
-     * deliver is the reporter's one inbound mutation) */
+    /** client id from the hello frame (cli | web | plugin | agent) */
     client?: string;
+    /** session ids this client is known to own (docs/02 reporter frames:
+     * session_start/session_end announce ownership; used to route deliver
+     * frames by sessionId instead of first-connection-wins) */
+    sessions: Set<string>;
     buffer: string;
 };
 
@@ -150,6 +152,18 @@ export const startUnixSocketServer = (opts: ServerOptions) => {
             return;
         }
         if (typeof frame.client === "string") conn.client = frame.client;
+        if (frame.ch === "report" && typeof frame.sessionId === "string" && frame.sessionId.length > 0) {
+            // reporter ownership: session_start/session_end move the session to
+            // this connection (docs/02: frames carry sessionId on every report)
+            if (frame.frame === "session_end") {
+                for (const c of connections) c.sessions.delete(frame.sessionId);
+            } else if (frame.frame === "session_start") {
+                for (const c of connections) c.sessions.delete(frame.sessionId);
+                conn.sessions.add(frame.sessionId);
+            } else {
+                // unknown frame name carrying a sessionId: ownership unchanged
+            }
+        }
         switch (frame.ch) {
             case "hello": {
                 writeFrame(conn, { v: PROTOCOL_VERSION, ch: "hello", hub: opts.hubInfo });
@@ -195,7 +209,7 @@ export const startUnixSocketServer = (opts: ServerOptions) => {
     const MAX_FRAME = 1024 * 1024;
 
     const onConnection = (sock: net.Socket): void => {
-        const conn: Connection = { sock, subscribed: false, buffer: "" };
+        const conn: Connection = { sock, subscribed: false, sessions: new Set(), buffer: "" };
         connections.add(conn);
         sock.on("data", (buf: Buffer) => {
             conn.buffer += buf.toString("utf8");
@@ -240,19 +254,24 @@ export const startUnixSocketServer = (opts: ServerOptions) => {
         }
     };
 
-    /** Push one deliver frame to a connected client (docs/02 §hub.sock: deliver
-     * is the reporter's one inbound mutation — sendUserMessage into the host
-     * session). Addressed by hello client id ("plugin"); targets first by id,
-     * then by opName alias. Result reports whether a live connection got the
-     * frame — never a throw. */
-    const deliverTo = (clientId: string, opName: string, text: string): Result<void, HubError> => {
-        const targets = [...connections].filter((c) => c.client === clientId || c.client === opName);
-        const conn = targets[0];
+    /** Push one deliver frame to the connected reporter that owns `sessionId`
+     * (docs/02 §hub.sock: deliver is the reporter's one inbound mutation —
+     * sendUserMessage into the host session). Routing is sessionId-addressed:
+     * the connection is picked from reporter-frame ownership (session_start /
+     * session_end announce it), NOT first-connection-wins — with N plugin
+     * clients connected, each gets only its own session's frames. When no
+     * connection owns the session but exactly one reporter is connected, it
+     * is used as the unambiguous fallback. Result reports whether a live
+     * connection got the frame — never a throw. */
+    const deliverTo = (sessionId: string, text: string): Result<void, HubError> => {
+        const reporters = [...connections].filter((c) => c.client === "plugin");
+        const owner = reporters.find((c) => c.sessions.has(sessionId));
+        const conn = owner ?? (reporters.length === 1 ? reporters[0] : undefined);
         if (!conn) {
-            return { ok: false, error: hubError("unknown-session", `no connected client ${clientId} for session ${opName}`, { retryable: false }) };
+            return { ok: false, error: hubError("unknown-session", `no connected reporter owns session ${sessionId}`, { retryable: false }) };
         }
         try {
-            writeFrame(conn, { v: PROTOCOL_VERSION, ch: "deliver", cmdId: opName, sessionId: opName, text });
+            writeFrame(conn, { v: PROTOCOL_VERSION, ch: "deliver", sessionId, text });
             return ok(undefined);
         } catch (e) {
             return { ok: false, error: hubError("unavailable-hub", `deliver write failed: ${(e as Error).message}`, { retryable: true, cause: e }) };

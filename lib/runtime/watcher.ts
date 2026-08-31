@@ -7,6 +7,7 @@ import type { LogEntry, Phase, AttentionKind } from "../domain/session";
 import { classifyBatch, idleSessions } from "../domain/describe";
 import type { AttentionCandidate } from "../domain/attention";
 import { proposeAttention } from "../domain/attention";
+import type { HubError, Result } from "../domain/command";
 import type { StatusStore } from "../ports/status_store";
 import type { SummaryStore } from "../ports/summary_store";
 import type { AttentionStore } from "../ports/attention_store";
@@ -32,6 +33,11 @@ export type WatcherOptions = {
   selfIds?: string[];
   /** env the child reads (OMP_BIN, OMP_HUB_MODEL); resolved at the host edge */
   env?: { ompBin?: string; model?: string };
+  /** spawn the agent child during start() (default true). Hosts that own the
+   * spawn moment set false — docs/05 §Agent spawn: the agent is optional,
+   * default off; /hub-agent spawns it later through spawnAgent() on the same
+   * supervised path. */
+  spawnOnStart?: boolean;
   /** trailing debounce per session for the agent_end summary pass */
   debounceMs?: number;
   /** supervision: restart cap before giving up */
@@ -109,13 +115,21 @@ export const buildSpawnSpec = (opts: {
 type OpenItem = { id: string; kind: AttentionKind };
 
 export type WatcherRuntime = {
-  /** idempotent: subscribes, spawns the child, runs catch-up, enters the loop */
+  /** idempotent: subscribes, runs catch-up, enters the loop; spawns the child
+   * unless spawnOnStart was false */
   start(): Promise<void>;
   /** unsubscribes and stops supervision; the child is left to the host's dispose path */
   stop(): void;
+  /** spawn the agent child on demand (docs/06: the one spawn every entry
+   * point resolves to — CLI foreground, web toggle, /hub-agent). Adopts when
+   * a child is already live (docs/05 §Agent spawn: at most one); failures
+   * feed supervision (bounded backoff). */
+  spawnAgent(): Promise<Result<{ name: string }, HubError>>;
   /** snapshot for tests/hosts: agent session id, restart state */
   state(): { agentSessionId: string | null; restarts: number; running: boolean };
 };
+
+const okSpawn = (name: string): Result<{ name: string }, HubError> => ({ ok: true, value: { name } });
 
 /** Normalize an unknown EventBus payload into a LogEntry, or null. */
 const asLogEntry = (payload: unknown): LogEntry | null => {
@@ -439,31 +453,40 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
     const delay = backoffDelay(attempt);
     cfg.scheduler.setTimeout(() => {
       if (!running) return;
-      void spawnAgent();
+      void spawnOnDemand();
     }, delay);
   };
 
-  const spawnAgent = async (): Promise<void> => {
+  // Name of the live agent child (adopt key for spawnAgent: at most one —
+  // docs/05 §Agent spawn). Null until the first successful spawn.
+  let childName: string | null = null;
+
+  const spawnOnDemand = async (): Promise<Result<{ name: string }, HubError>> => {
+    if (childName !== null) return okSpawn(childName); // adopt the live child
     const ompBin = cfg.env?.ompBin ?? "omp";
     const model = cfg.env?.model;
     const spec = buildSpawnSpec({ ompBin, ...(model !== undefined ? { model } : {}) });
     if ("error" in spec) {
       running = false;
-      return;
+      return { ok: false, error: spec.error };
     }
     const res = await cfg.runtime.spawn({ name: spec.name, ...(spec.env.OMP_HUB_MODEL !== undefined ? { model: spec.env.OMP_HUB_MODEL } : {}) });
     if (!res.ok) {
       supervise();
-      return;
+      return res;
     }
     if (cfg.clock.now() - lastSpawnAt > (cfg.stableResetMs ?? WATCHER_DEFAULTS.stableResetMs)) {
       restarts = 0; // stable long enough: attempts reset
     }
     lastSpawnAt = cfg.clock.now();
+    childName = res.value.name;
     if (res.value.sessionId !== null) {
       agentSessionId = res.value.sessionId;
       selfIds.add(res.value.sessionId);
+      // docs/02 §Hub meta block: agentSession is present while the agent runs
+      await cfg.status.update((s) => ({ ...s, agentSession: res.value.sessionId! }));
     }
+    return okSpawn(res.value.name);
   };
 
   const start = async (): Promise<void> => {
@@ -473,7 +496,7 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
     unsub = cfg.bus.subscribe(onEvent);
     await catchUp();
     armIdleCheck();
-    await spawnAgent();
+    if (cfg.spawnOnStart !== false) await spawnOnDemand();
   };
 
   const stop = (): void => {
@@ -496,6 +519,7 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
   return {
     start,
     stop,
+    spawnAgent: spawnOnDemand,
     state: () => ({ agentSessionId, selfIds: [...selfIds], restarts, running }),
   };
 };

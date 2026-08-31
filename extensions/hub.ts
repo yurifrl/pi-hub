@@ -40,61 +40,75 @@ export type CommandOutcome = { ok: boolean; text: string };
 
 /** Pure command bodies over injected state — exported for tests (docs/01
  * §Testing: extensions exercised with a stubbed host context).
- * `runtimeFor` injects the AgentRuntime so tests pass fakes (no real omp). */
-export const createHubCommands = (env: HubEnv, state: HubState, runtimeFor?: (local: HubLocal) => AgentRuntime, compose?: (env: HubEnv, state: HubState) => HubLocal) => ({
-    async hubStart(): Promise<CommandOutcome> {
-        if (state.active) return errMsg("hub already active");
-        if (env.hubAgent) {
-            // guard 5: the hub agent may not become the hub (docs/05 §Anti-recursion)
-            return errMsg("this session is the hub agent");
-        }
-        const local = compose ? compose(env, state) : createHubLocal({ env, selfSessionId: () => state.selfSessionId });
-        const started = await local.start();
-        if (!started.ok) return errMsg(started.error.message);
-        state.local = local;
-        state.active = true;
-        return okMsg(`hub serving on ${started.value.socketPath}`);
-    },
-
-    async hubStop(): Promise<CommandOutcome> {
-        if (!state.active || !state.local) return errMsg("hub not active");
-        // stop serving, keep the session running; open sessions are NOT
-        // archived (docs/05 §Shutdown: they close individually via session_end)
-        await state.local.stop();
-        state.local = null;
-        state.active = false;
+ * `agentRuntimeFor` injects the acp AgentRuntime so tests pass fakes (no real
+ * omp); defaults to the local stack's acp runtime. */
+export const createHubCommands = (env: HubEnv, state: HubState, agentRuntimeFor?: (local: HubLocal) => AgentRuntime, compose?: (env: HubEnv, state: HubState) => HubLocal) => {
+    /** Kill the agent child through the acp runtime and reset toggle state.
+     * Returns false when no agent is running. */
+    const killAgent = async (): Promise<boolean> => {
+        if (!state.agentActive || !state.agentName || !state.local) return false;
+        const runtime = agentRuntimeFor ? agentRuntimeFor(state.local) : state.local.agentRuntimeFor();
+        await runtime.kill(state.agentName);
         state.agentActive = false;
         state.agentName = null;
-        return okMsg("hub stopped; session keeps running");
-    },
+        return true;
+    };
 
-    async hubAgent(): Promise<CommandOutcome> {
-        if (!state.active || !state.local) return errMsg("hub not active — /hub-start first");
-        if (state.agentActive) {
-            // adopt the existing agent (docs/05 §Agent spawn: at most one)
-            return okMsg("hub agent already running");
-        }
-        const spec = buildAgentSpec(env);
-        if ("error" in spec) return errMsg(spec.error.message);
-        const runtime = runtimeFor ? runtimeFor(state.local) : state.local.runtime;
-        const spawned = await runtime.spawn({ name: spec.name, ...(env.model !== undefined ? { model: env.model } : {}) });
-        if (!spawned.ok) return errMsg(spawned.error.message);
-        state.agentActive = true;
-        state.agentName = spawned.value.name;
-        // agent row registered kind:"agent" via its own session_start frame;
-        // attention isolation for it is the store's selfIds/guard-6 job
-        return okMsg(`hub agent spawned as ${spawned.value.name}`);
-    },
+    return {
+        async hubStart(): Promise<CommandOutcome> {
+            if (state.active) return errMsg("hub already active");
+            if (env.hubAgent) {
+                // guard 5: the hub agent may not become the hub (docs/05 §Anti-recursion)
+                return errMsg("this session is the hub agent");
+            }
+            const local = compose ? compose(env, state) : createHubLocal({ env, selfSessionId: () => state.selfSessionId });
+            const started = await local.start();
+            if (!started.ok) return errMsg(started.error.message);
+            state.local = local;
+            state.active = true;
+            return okMsg(`hub serving on ${started.value.socketPath}`);
+        },
 
-    stopAgent(): CommandOutcome {
-        if (!state.agentActive || !state.agentName || !state.local) return errMsg("hub agent not running");
-        const runtime = runtimeFor ? runtimeFor(state.local) : state.local.runtime;
-        void runtime.kill(state.agentName);
-        state.agentActive = false;
-        state.agentName = null;
-        return okMsg("hub agent stopped");
-    },
-});
+        async hubStop(): Promise<CommandOutcome> {
+            if (!state.active || !state.local) return errMsg("hub not active");
+            // kill the agent child first (spawned outside core.children — the
+            // watcher's spawn; leaving it alive would orphan it and let a
+            // following /hub-agent double-spawn, violating "at most one")
+            await killAgent();
+            // stop serving, keep the session running; open sessions are NOT
+            // archived (docs/05 §Shutdown: they close individually via session_end)
+            await state.local.stop();
+            state.local = null;
+            state.active = false;
+            return okMsg("hub stopped; session keeps running");
+        },
+
+        async hubAgent(): Promise<CommandOutcome> {
+            if (!state.active || !state.local) return errMsg("hub not active — /hub-start first");
+            // guard 5 precheck + the docs/06 spawn spec (acp peer, env
+            // OMP_HUB_AGENT=1) — the same spec every entry point resolves to.
+            const spec = buildAgentSpec(env);
+            if ("error" in spec) return errMsg(spec.error.message);
+            if (state.agentActive) {
+                // adopt the existing agent (docs/05 §Agent spawn: at most one;
+                // /hub-agent adopts the one that is already alive)
+                return okMsg("hub agent already running");
+            }
+            // the spawn itself goes through the watcher's supervised path so
+            // agentSession lands in status.json and supervision is live
+            // (docs/06: three entry points, one path)
+            const spawn = state.local.watcherSpawn();
+            if (!spawn) return errMsg("hub not active — /hub-start first");
+            const spawned = await spawn;
+            if (!spawned.ok) return errMsg(spawned.error.message);
+            state.agentActive = true;
+            state.agentName = spawned.value.name;
+            // agent row registered kind:"agent" via its own session_start frame;
+            // attention isolation for it is the watcher's selfIds/guard-6 job
+            return okMsg(`hub agent spawned as ${spawned.value.name}`);
+        },
+    };
+};
 
 /** Agent spawn spec (docs/05 §Agent spawn + docs/06 §Hub agent): omp --mode
  * acp child, env OMP_HUB_AGENT=1 (+ OMP_HUB_MODEL), bin from OMP_BIN. */
@@ -166,7 +180,7 @@ export default function hub(pi: ExtensionAPI): void {
     pi.registerCommand("hub-agent", {
         description: "Toggle the hub agent (spawn omp --mode acp child, watcher surface)",
         handler: async (_args, ctx) => {
-            const out = state.agentActive ? commands.stopAgent() : await commands.hubAgent();
+            const out = await commands.hubAgent();
             ctx.ui.notify(out.text, out.ok ? "info" : "error");
         },
     });

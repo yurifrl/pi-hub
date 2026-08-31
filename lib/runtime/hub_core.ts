@@ -108,8 +108,8 @@ const newSessionRecord = (raw: Extract<RawOmpEvent, { type: "session_start" }>, 
     status: "open",
     kind: "peer",
     cwd: raw.cwd,
-    title: "",
-    model: "",
+    title: raw.title ?? "",
+    model: raw.model ?? "",
     phase: "working",
     log: `logs/${raw.sessionId}.jsonl`,
     toolCounts: {},
@@ -130,8 +130,16 @@ const applyEvent = (s: StatusFile, raw: RawOmpEvent, clock: Clock): StatusFile =
     let next: SessionRecord;
     switch (raw.type) {
         case "session_start":
-            // attach idempotency (guard 4): upsert, never duplicate rows
-            next = { ...base, status: "open" };
+            // attach idempotency (guard 4): upsert, never duplicate rows.
+            // title/model arrive on the frame (docs/02 §Reporter frames:
+            // session_start carries kind, cwd, model; docs/05 §Reporter: also
+            // title) — passed through, never clobbering an existing title.
+            next = {
+                ...base,
+                status: "open",
+                ...(raw.title !== undefined && raw.title !== "" ? { title: raw.title } : {}),
+                ...(raw.model !== undefined && raw.model !== "" ? { model: raw.model } : {}),
+            };
             break;
         case "user_message":
             next = { ...base, turns: base.turns + 1, title: base.title || raw.text.slice(0, 80) };

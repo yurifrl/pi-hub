@@ -2,9 +2,9 @@
 // (docs/05-omp-plugin.md §Agent spawn). Port implementation; all I/O; imports
 // ports + domain (docs/01-architecture.md §Package layout).
 //
-// Two child flavors per docs/05:
-//  - brain/worker: `OMP_BIN --mode rpc`, env OMP_HUB_BRAIN=1 (+ OMP_HUB_MODEL)
-//  - hub agent:    `OMP_BIN --mode acp`, env OMP_HUB_AGENT=1
+// One runtime instance per child flavor, composed by the root (hub_local):
+//  - hub runtime (default rpc): brain/workers — `OMP_BIN --mode rpc`, env OMP_HUB_BRAIN=1 (+ OMP_HUB_MODEL)
+//  - agent runtime (acp): the hub agent — `OMP_BIN --mode acp`, env OMP_HUB_AGENT=1
 //
 // env resolution (OMP_BIN, OMP_HUB_MODEL, the binary path) belongs to the host
 // — constructors take explicit values, adapters never read process.env

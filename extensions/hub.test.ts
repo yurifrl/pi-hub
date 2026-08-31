@@ -93,6 +93,8 @@ const makeSocketFake = () => {
 
     class FakeConn {
         delivered: Array<{ sessionId: string; text: string }> = [];
+        /** sessions this connection owns (session_start reported through it) */
+        sessions = new Set<string>();
         constructor(public client: string | undefined) {
             conns.push(this);
         }
@@ -110,9 +112,12 @@ const makeSocketFake = () => {
         broadcast: (frame: unknown) => {
             served.push({ frame, conn: conns[conns.length - 1] ?? new FakeConn(undefined) });
         },
-        deliverTo: (clientId: string, sessionId: string, text: string) => {
-            const conn = conns.find((c) => c.client === clientId);
-            if (!conn) return { ok: false, error: { code: "unknown-session", message: `no client ${clientId}`, retryable: false } } as Result<void, HubError>;
+        deliverTo: (sessionId: string, text: string) => {
+            // sessionId-addressed parity with the real server: route by the
+            // connection that reported session_start for this session
+            const owner = conns.find((c) => c.sessions.has(sessionId));
+            const conn = owner ?? (conns.length === 1 ? conns[0] : undefined);
+            if (!conn) return { ok: false, error: { code: "unknown-session", message: `no reporter owns ${sessionId}`, retryable: false } } as Result<void, HubError>;
             conn.delivered.push({ sessionId, text });
             return { ok: true, value: undefined } as Result<void, HubError>;
         },
@@ -122,6 +127,26 @@ const makeSocketFake = () => {
         return server;
     };
     return { server, factory, served, started, closeCount: () => closeCount, conns };
+};
+
+// ---- fake watcher runtime: start/stop/spawnAgent spies (tk-jwx seam) ----
+
+const makeWatcherFake = () => {
+    const calls = { start: 0, stop: 0, spawn: 0 };
+    const runtime: import("@yurifrl/hub/runtime/watcher").WatcherRuntime = {
+        start: async () => {
+            calls.start++;
+        },
+        stop: () => {
+            calls.stop++;
+        },
+        spawnAgent: async () => {
+            calls.spawn++;
+            return { ok: true, value: { name: "hub-watcher" } } as Result<{ name: string }, HubError>;
+        },
+        state: () => ({ agentSessionId: null, selfIds: [], restarts: 0, running: calls.start > calls.stop }),
+    };
+    return { runtime, calls };
 };
 
 // ---- env + temp dirs ----
@@ -259,6 +284,56 @@ describe("createHubCommands.hubStart — socket bound + brain spawned via inject
         client.close();
         await local.stop();
     });
+
+    it("/hub-start STARTS the watcher: bus subscription + supervision live (P1-1)", async () => {
+        const { env } = await makeEnv();
+        const rt = makeRuntime();
+        const wf = makeWatcherFake();
+        const local = createHubLocal({
+            env,
+            selfSessionId: () => "s-self",
+            overrides: {
+                runtime: rt.runtime,
+                socket: makeSocketFake().factory as never,
+                watcher: () => {
+                    return wf.runtime;
+                },
+            },
+        });
+        const out = await local.start();
+        expect(out.ok).toBe(true);
+        // startWatcher.start() invoked on /hub-start (was never called pre-fix)
+        expect(wf.calls.start).toBe(1);
+        expect(local.watcher).toBe(wf.runtime);
+        await local.stop();
+        // and STOPPED on /hub-stop
+        expect(wf.calls.stop).toBe(1);
+        expect(local.watcher).toBeNull();
+    });
+
+    it("/hub-start composes the watcher with the acp agent runtime (not the rpc brain runtime)", async () => {
+        const { env } = await makeEnv();
+        const rt = makeRuntime();
+        const art = makeRuntime();
+        let seen: unknown = null;
+        const local = createHubLocal({
+            env,
+            selfSessionId: () => "s-self",
+            overrides: {
+                runtime: rt.runtime,
+                agentRuntime: art.runtime,
+                socket: makeSocketFake().factory as never,
+                watcher: (composed) => {
+                    seen = composed.runtime;
+                    return makeWatcherFake().runtime;
+                },
+            },
+        });
+        await local.start();
+        expect(seen).toBe(art.runtime);
+        expect(seen).not.toBe(rt.runtime);
+        await local.stop();
+    });
 });
 
 // =====================================================================
@@ -327,30 +402,107 @@ describe("createHubCommands.hubStop — socket closed + children terminated + se
 // =====================================================================
 
 describe("createHubCommands.hubAgent — toggle the hub agent surface", () => {
-    it("spawns the agent child via the runtime with the watcher name; second call adopts (no double spawn)", async () => {
+    it("spawns the acp agent via the injected acp runtime (flavor+env asserted); second call adopts (no double spawn)", async () => {
         const { env } = await makeEnv();
-        const rt = makeRuntime();
+        const rt = makeRuntime(); // the rpc (brain) runtime — must NOT see the agent spawn
+        const art = makeRuntime(); // the acp (agent) runtime — the /hub-agent path
         const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null };
-        state.local = createHubLocal({ env, selfSessionId: () => state.selfSessionId, overrides: { runtime: rt.runtime, socket: makeSocketFake().factory as never } });
-        const commands = createHubCommands(env, state, () => rt.runtime, () => state.local!);
+        const theLocal = createHubLocal({
+            env,
+            selfSessionId: () => state.selfSessionId,
+            // REAL watcher (spawnOnStart:false): /hub-agent must route through
+            // watcherSpawn() → the supervised path → the acp runtime. A fake
+            // watcher here would swallow the spawn and re-hide the P1-2 misroute.
+            overrides: { runtime: rt.runtime, agentRuntime: art.runtime, socket: makeSocketFake().factory as never },
+        });
+        state.local = theLocal;
+        const commands = createHubCommands(env, state, () => art.runtime, () => theLocal);
         await commands.hubStart();
 
         const on = await commands.hubAgent();
         expect(on.ok).toBe(true);
         expect(state.agentActive).toBe(true);
         expect(state.agentName).toBe("hub-watcher");
-        const spawnsAfterOn = rt.spawns.length;
+        // P1-2 regression: the spawn went through the acp runtime, flavor- and
+        // env-correct (the OLD test passed a name-only fake and missed the
+        // rpc misroute); the brain runtime saw nothing
+        expect(art.spawns.length).toBe(1);
+        expect(art.spawns[0]!.name).toBe("hub-watcher");
+        expect(art.spawns[0]!.model).toBeUndefined();
+        expect(rt.spawns.length).toBe(1); // only the brain
+        expect(rt.spawns[0]!.name).toBe("brain");
+        const agentSpawnsAfterOn = art.spawns.length;
 
         // adopt: at most one hub agent (docs/05 §Agent spawn)
         const again = await commands.hubAgent();
         expect(again.ok).toBe(true);
-        expect(rt.spawns.length).toBe(spawnsAfterOn);
+        expect(art.spawns.length).toBe(agentSpawnsAfterOn);
 
-        const off = commands.stopAgent();
-        expect(off.ok).toBe(true);
-        expect(rt.killed).toContain("hub-watcher");
-        expect(state.agentActive).toBe(false);
+        // /hub-stop kills the agent child (P2-1: was reset-without-kill)
         await commands.hubStop();
+        expect(art.killed).toContain("hub-watcher");
+        expect(state.agentActive).toBe(false);
+        expect(state.agentName).toBeNull();
+
+        // re-start spawns fresh: a second /hub-agent spawns a NEW child, not a zombie
+        const start2 = await commands.hubStart();
+        expect(start2.ok).toBe(true);
+        const on2 = await commands.hubAgent();
+        expect(on2.ok).toBe(true);
+        expect(art.spawns.length).toBe(2);
+        expect(art.spawns[1]!.name).toBe("hub-watcher");
+        await commands.hubStop();
+    });
+
+    it("/hub-stop with a running agent terminates the child and re-start re-spawns fresh (P2-1)", async () => {
+        const { env } = await makeEnv();
+        const rt = makeRuntime(); // the rpc (brain) runtime fake
+        const art = makeRuntime(); // the acp (agent) runtime fake
+        const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null };
+        const theLocal = createHubLocal({
+            env,
+            selfSessionId: () => state.selfSessionId,
+            // REAL watcher again: spawn assertion must prove the acp runtime
+            // got the spawn through the watcher's supervised path (P1-2).
+            overrides: { runtime: rt.runtime, agentRuntime: art.runtime, socket: makeSocketFake().factory as never },
+        });
+        state.local = theLocal;
+        const commands = createHubCommands(env, state, () => art.runtime, () => theLocal);
+        await commands.hubStart();
+        expect((await commands.hubAgent()).ok).toBe(true);
+        expect(art.spawns.length).toBe(1);
+
+        await commands.hubStop();
+        expect(art.killed).toContain("hub-watcher");
+        expect(state.agentActive).toBe(false);
+        expect(state.agentName).toBeNull();
+
+        // re-start + re-toggle spawns a fresh child (no orphan, no double)
+        await commands.hubStart();
+        expect((await commands.hubAgent()).ok).toBe(true);
+        expect(art.spawns.length).toBe(2);
+        await commands.hubStop();
+        expect(art.killed).toEqual(["hub-watcher", "hub-watcher"]);
+    });
+
+    it("guard 5: /hub-start inside a hub-agent session is refused (mutation check: guard removal must fail this test)", async () => {
+        // P2-3: the guard-5 mutation survived because nothing exercised the
+        // refusal through the command surface.
+        const { env } = await makeEnv({ OMP_HUB_AGENT: "1" });
+        const rt = makeRuntime();
+        const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null };
+        let composed = 0;
+        const commands = createHubCommands(env, state, () => rt.runtime, () => {
+            composed++;
+            return state.local!;
+        });
+        const out = await commands.hubStart();
+        expect(out.ok).toBe(false);
+        expect(out.text).toBe("this session is the hub agent");
+        // refused BEFORE any composition/start side effects
+        expect(composed).toBe(0);
+        expect(state.active).toBe(false);
+        expect(state.local).toBeNull();
     });
 
     it("hub-agent before hub-start is refused (hub not active)", async () => {
@@ -441,6 +593,44 @@ describe("reportToRaw + widget key", () => {
         });
         expect(reportToRaw({ v: 1, ch: "report", frame: "mystery", sessionId: "s1" })).toBeNull();
         expect(reportToRaw({ v: 1, ch: "report", frame: "user_message" })).toBeNull(); // no sessionId
+    });
+
+    it("P2-4: session_start title/model pass through into the RawOmpEvent (roster rows titled)", () => {
+        expect(
+            reportToRaw({ v: 1, ch: "report", frame: "session_start", sessionId: "s1", attached: false, cwd: "/w", title: "refactor hub", model: "aihub/glm-5.3-flash" }),
+        ).toEqual({
+            type: "session_start",
+            sessionId: "s1",
+            attached: false,
+            cwd: "/w",
+            title: "refactor hub",
+            model: "aihub/glm-5.3-flash",
+        });
+        // absent/empty title+model are omitted (exactOptionalPropertyTypes-safe)
+        expect(
+            reportToRaw({ v: 1, ch: "report", frame: "session_start", sessionId: "s2", attached: false, cwd: "/w" }),
+        ).toEqual({ type: "session_start", sessionId: "s2", attached: false, cwd: "/w" });
+        expect(
+            reportToRaw({ v: 1, ch: "report", frame: "session_start", sessionId: "s3", attached: false, cwd: "/w", title: "", model: "" }),
+        ).toEqual({ type: "session_start", sessionId: "s3", attached: false, cwd: "/w" });
+    });
+
+    it("P2-4 end-to-end: a session_start frame with title lands in status.json sessions row", async () => {
+        const { env } = await makeEnv();
+        const rt = makeRuntime();
+        const local = createHubLocal({ env, selfSessionId: () => "s-self", overrides: { runtime: rt.runtime } });
+        await local.start();
+        const client = await connectClient(env.sock);
+        client.report("session_start", { sessionId: "s-titled", attached: false, cwd: "/tmp/x", title: "deploy canary", model: "m-1" });
+        await Bun.sleep(5);
+        const snap = await local.readStatus();
+        expect(snap.ok).toBe(true);
+        if (snap.ok) {
+            expect(snap.value.sessions["s-titled"]!.title).toBe("deploy canary");
+            expect(snap.value.sessions["s-titled"]!.model).toBe("m-1");
+        }
+        client.close();
+        await local.stop();
     });
 
     it("widget key is the stable omp contract", () => {

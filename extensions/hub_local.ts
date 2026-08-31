@@ -33,10 +33,14 @@ const ok = <T>(value: T): Result<T, HubError> => ({ ok: true, value });
  * §Testing: "extensions/hub.ts … no omp runtime needed"). */
 export type HubLocalOverrides = {
     runtime?: HubCoreDepsRuntime;
+    /** test hook replacing the agent (acp) runtime — the /hub-agent toggle and
+     * watcher supervision use it (docs/05 §Agent spawn) */
+    agentRuntime?: HubCoreDepsRuntime;
     /** test hook replacing the real socket server factory */
     socket?: (opts: SocketOpts) => Pick<HubSocketServer, "start" | "close" | "broadcast" | "deliverTo">;
-    /** test hook observing the watcher options (the watcher loop itself stays real) */
-    watcher?: Parameters<typeof startWatcher>[0];
+    /** test hook replacing the watcher factory (fake with start/stop/spawnAgent
+     * spies; receives the real options the real watcher would get) */
+    watcher?: (opts: Parameters<typeof startWatcher>[0]) => WatcherRuntime;
 };
 
 type SocketOpts = Parameters<typeof startUnixSocketServer>[0];
@@ -66,6 +70,8 @@ export const reportToRaw = (frame: ReportFrame): RawOmpEvent | null => {
                 sessionId,
                 attached: p.attached === true,
                 cwd: typeof p.cwd === "string" ? p.cwd : "",
+                ...(typeof p.model === "string" && p.model.length > 0 ? { model: p.model } : {}),
+                ...(typeof p.title === "string" && p.title.length > 0 ? { title: p.title } : {}),
             };
         case "user_message":
             return { type: "user_message", sessionId, text: typeof p.text === "string" ? p.text : "" };
@@ -93,9 +99,15 @@ export type HubLocal = {
     handleReport(frame: ReportFrame): void;
     /** deliver a text into a peer session through the socket deliverTo bridge */
     deliverTo(sessionId: string, text: string): Result<void, HubError>;
+    /** the acp runtime driving the agent toggle + watcher supervision (docs/05 §Agent spawn) */
+    agentRuntimeFor(): HubCoreDepsRuntime;
+    /** spawn (or adopt) the hub agent child on the watcher's supervised path
+     * (docs/06: the one spawn every entry point resolves to); resolves the
+     * child name, or the spawn error after supervision scheduling */
+    watcherSpawn(): Promise<Result<{ name: string }, HubError>> | null;
     /** core + watcher + socket for tests/diagnostics */
     core: HubCore;
-    /** the AgentRuntime driving brain/worker/agent children (agent toggle uses it) */
+    /** the AgentRuntime driving brain/worker children (rpc flavor) */
     runtime: Parameters<typeof createHubCore>[0]["runtime"];
     watcher: WatcherRuntime | null;
     socket: Pick<HubSocketServer, "start" | "close" | "broadcast" | "deliverTo"> | null;
@@ -122,7 +134,11 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
         flavor: "rpc" as const,
         extraEnv: {},
     };
+    // One runtime per child flavor (docs/05 §Entry: brain/workers are rpc;
+    // §Agent spawn: the hub agent is an acp peer, env OMP_HUB_AGENT=1).
     const runtime = deps.overrides?.runtime ?? createOmpAgentRuntime(runtimeOpts);
+    const agentRuntime = deps.overrides?.agentRuntime ?? createOmpAgentRuntime({ ...runtimeOpts, flavor: "acp" as const });
+    const agentRuntimeFor = (): HubCoreDepsRuntime => deps.overrides?.agentRuntime ?? agentRuntime;
 
     const brainSpec = (): BrainSpec => {
         const spec: BrainSpec = { name: "brain", bin: env.ompBin, args: ["--mode", "rpc"], env: { OMP_HUB_BRAIN: "1" } };
@@ -140,7 +156,7 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
             attention,
             clock,
             selfSessionId: deps.selfSessionId,
-            deliverTo: (sessionId, text) => socket?.deliverTo("plugin", sessionId, text) ?? { ok: false, error: { code: "unknown-session", message: "hub not serving", retryable: false } },
+            deliverTo: (sessionId, text) => socket?.deliverTo(sessionId, text) ?? { ok: false, error: { code: "unknown-session", message: "hub not serving", retryable: false } },
         },
         { ...(env.model !== undefined ? { model: env.model } : {}) },
     );
@@ -167,6 +183,11 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
     return {
         core,
         runtime,
+        agentRuntimeFor,
+
+        watcherSpawn() {
+            return watcher?.spawnAgent() ?? null;
+        },
         get watcher() {
             return watcher;
         },
@@ -197,10 +218,16 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
                 return started;
             }
 
-            // watcher over the bus (tk-jwx runtime; spawn goes through AgentRuntime)
+            // watcher over the bus (tk-jwx runtime; supervision spawns the acp
+            // agent through agentRuntime). start() subscribes, runs catch-up,
+            // spawns the child, and enters the flush/idle loop — the /hub-start
+            // lifecycle owns calling it (ordering: watcher after socket bind so
+            // the agent child's own session_start can flow back in) and stop()
+            // before children dispose (the watcher's stop() leaves the child to
+            // the host's dispose path — docs/06 watcher contract).
             const watcherOpts = deps.overrides?.watcher;
-            watcher = startWatcher({
-                runtime,
+            const realOpts = {
+                runtime: agentRuntimeFor(),
                 bus,
                 status,
                 summaries,
@@ -208,8 +235,13 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
                 clock,
                 scheduler,
                 env: { ompBin: env.ompBin, ...(env.model !== undefined ? { model: env.model } : {}) },
-                ...(watcherOpts !== undefined ? { watcherOpts } : {}),
-            } as Parameters<typeof startWatcher>[0]);
+                // docs/05 §Agent spawn: the agent is optional, default off —
+                // the watcher starts WITHOUT the child; /hub-agent spawns it
+                // later through watcherSpawn() on the same supervised path
+                spawnOnStart: false,
+            } as Parameters<typeof startWatcher>[0];
+            watcher = watcherOpts ? watcherOpts(realOpts) : startWatcher(realOpts);
+            await watcher.start();
 
             // seed the meta block so reads never see a missing status.json
             // (docs/02 §Hub meta block); the skeleton version field leads
@@ -231,9 +263,19 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
         },
 
         async stop() {
+            const adoptedAgentSession = watcher?.state().agentSessionId ?? null;
             watcher?.stop();
             watcher = null;
             await core.disposeChildren(); // brain + workers (docs/05 §Shutdown step 3)
+            // the agent child was disposed above; its meta row must not survive
+            // (docs/02: agentSession is present while the agent runs) — a stale
+            // value would be re-adopted by the next start's catch-up
+            if (adoptedAgentSession !== null) {
+                await status.update((s) => {
+                    const { agentSession: _cleared, ...rest } = s;
+                    return rest as StatusFile;
+                });
+            }
             if (socket) {
                 await socket.close(); // reporters see EOF, enter reconnect backoff
                 socket = null;
@@ -247,7 +289,7 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
         handleReport,
 
         deliverTo(sessionId, text) {
-            return socket?.deliverTo("plugin", sessionId, text) ?? { ok: false, error: { code: "unknown-session", message: "hub not serving", retryable: false } };
+            return socket?.deliverTo(sessionId, text) ?? { ok: false, error: { code: "unknown-session", message: "hub not serving", retryable: false } };
         },
 
         async updateStatus(mutate) {
