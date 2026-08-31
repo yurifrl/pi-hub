@@ -240,6 +240,112 @@ describe("unix_socket server — event broadcast (docs/02 §Event frames)", () =
     });
 });
 
+describe("unix_socket server — deliverTo sessionId routing (P2-2)", () => {
+    /** A raw plugin client that announces ownership via a session_start report
+     * frame and collects deliver frames addressed to it. */
+    const deliverClient = async (
+        path: string,
+        announce: string | null,
+        got: { frames: Record<string, unknown>[] },
+    ): Promise<void> => {
+        let resolveOpen: () => void = () => {};
+        const opened = new Promise<void>((r) => {
+            resolveOpen = r;
+        });
+        const sock = Bun.connect({
+            unix: path,
+            socket: {
+                data(_socket, data) {
+                    for (const line of data.toString("utf8").split("\n")) {
+                        if (!line) continue;
+                        try {
+                            const f = JSON.parse(line) as Record<string, unknown>;
+                            if (f.ch === "deliver") got.frames.push(f);
+                        } catch {
+                            /* ignore */
+                        }
+                    }
+                },
+                error() {},
+                close() {},
+            },
+        });
+        void (async () => {
+            const s = await sock;
+            s.write(JSON.stringify({ v: 1, ch: "hello", client: "plugin" }) + "\n");
+            if (announce !== null) {
+                s.write(JSON.stringify({ v: 1, ch: "report", frame: "session_start", sessionId: announce, attached: true, cwd: "/w" }) + "\n");
+            }
+            resolveOpen();
+        })();
+        await opened;
+    };
+
+    it("two plugin clients: each deliver lands on the owner of the frame sessionId", async () => {
+        const { server, path } = await makeServer();
+        const a = { frames: [] as Record<string, unknown>[] };
+        const b = { frames: [] as Record<string, unknown>[] };
+        await deliverClient(path, "s-alpha", a);
+        await deliverClient(path, "s-beta", b);
+        // let the server accept both connections and process the ownership frames
+        await Bun.sleep(50);
+
+        // interleaved sends: routing must follow the sessionId, not the first connection
+        expect(server.deliverTo("s-alpha", "hello alpha").ok).toBe(true);
+        expect(server.deliverTo("s-beta", "hello beta").ok).toBe(true);
+        expect(server.deliverTo("s-alpha", "again alpha").ok).toBe(true);
+        await Bun.sleep(30);
+
+        expect(a.frames.map((f) => f.text)).toEqual(["hello alpha", "again alpha"]);
+        expect(b.frames.map((f) => f.text)).toEqual(["hello beta"]);
+        expect(a.frames.every((f) => f.sessionId === "s-alpha")).toBe(true);
+        expect(b.frames.every((f) => f.sessionId === "s-beta")).toBe(true);
+
+        // session_end releases ownership: after it, the old owner gets nothing
+        const endSock = Bun.connect({
+            unix: path,
+            socket: {
+                data() {},
+                error() {},
+                close() {},
+            },
+        });
+        void (async () => {
+            const s = await endSock;
+            s.write(JSON.stringify({ v: 1, ch: "hello", client: "plugin" }) + "\n");
+            s.write(JSON.stringify({ v: 1, ch: "report", frame: "session_end", sessionId: "s-alpha" }) + "\n");
+        })();
+        await Bun.sleep(30);
+        const afterEnd = server.deliverTo("s-alpha", "late");
+        expect(afterEnd.ok).toBe(false);
+        if (!afterEnd.ok) expect(afterEnd.error.code).toBe("unknown-session");
+        expect(a.frames.map((f) => f.text)).toEqual(["hello alpha", "again alpha"]); // unchanged
+    });
+
+    it("unknown sessionId with exactly one reporter connected → unambiguous fallback", async () => {
+        const { server, path } = await makeServer();
+        await Bun.sleep(30);
+        const only = { frames: [] as Record<string, unknown>[] };
+        await deliverClient(path, null, only); // connected, owns nothing
+        await Bun.sleep(30); // server must have accepted the connection first
+        const r = server.deliverTo("s-never-seen", "still you");
+        expect(r.ok).toBe(true);
+        await Bun.sleep(30);
+        expect(only.frames.map((f) => f.text)).toEqual(["still you"]);
+
+        // with TWO reporters and no owner, routing is refused — never first-conn-wins
+        const second = { frames: [] as Record<string, unknown>[] };
+        await deliverClient(path, null, second);
+        await Bun.sleep(30); // both reporters registered before the ambiguous send
+        const refused = server.deliverTo("s-never-seen", "ambiguous");
+        expect(refused.ok).toBe(false);
+        if (!refused.ok) expect(refused.error.code).toBe("unknown-session");
+        await Bun.sleep(30);
+        expect(only.frames.map((f) => f.text)).toEqual(["still you"]); // untouched
+        expect(second.frames).toEqual([]);
+    });
+});
+
 describe("unix_socket server — lifecycle", () => {
     it("stale socket file is unlinked before listen", async () => {
         const p = await socketPath();

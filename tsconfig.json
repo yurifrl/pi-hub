@@ -20,6 +20,6 @@
     "moduleDetection": "force",
     "skipLibCheck": true
   },
-  "include": ["lib/**/*.ts", "cli/src/**/*.ts", "web/src/**/*.ts"],
+  "include": ["lib/**/*.ts", "cli/src/**/*.ts", "web/src/**/*.ts", "extensions/**/*.ts"],
   "exclude": ["node_modules"]
 }

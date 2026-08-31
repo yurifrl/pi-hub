@@ -411,6 +411,69 @@ describe("supervision — bounded backoff", () => {
   });
 });
 
+describe("spawnOnStart + spawnAgent (docs/06: one supervised spawn path)", () => {
+  it("spawnOnStart: false starts WITHOUT the child; a later spawnAgent() spawns it (docs/05 §Agent spawn: the agent is optional, default off)", async () => {
+    const env = makeEnv();
+    const w = startWatcher({ ...baseOpts(env), spawnOnStart: false });
+    await w.start();
+    expect(env.spawnCalls()).toBe(0); // dormant: no child at start
+    expect(w.state().agentSessionId).toBeNull();
+
+    const res = await w.spawnAgent(); // /hub-agent resolves to this
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.name).toBe("hub-watcher");
+    expect(env.spawnCalls()).toBe(1);
+    expect(env.spawnArgs[0]!.name).toBe("hub-watcher");
+    expect(env.spawnArgs[0]!.model).toBeUndefined(); // env OMP_HUB_MODEL omitted when unset
+    expect(w.state().agentSessionId).toBe("agent-1");
+    // docs/02 §Hub meta block: agentSession is present while the agent runs
+    expect(env.statusFile.agentSession).toBe("agent-1");
+    w.stop();
+  });
+
+  it("spawnAgent adopts the live child (at most one) — no double spawn", async () => {
+    const env = makeEnv({ sessionId: "agent-e" });
+    const w = startWatcher({ ...baseOpts(env), spawnOnStart: false });
+    await w.start();
+    const first = await w.spawnAgent();
+    expect(first.ok).toBe(true);
+    const second = await w.spawnAgent();
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.value.name).toBe(first.ok ? first.value.name : "");
+    expect(env.spawnCalls()).toBe(1); // the second call adopted, never spawned
+    w.stop();
+  });
+
+  it("spawnAgent failure schedules supervision (the /hub-agent path retries with backoff)", async () => {
+    const env = makeEnv({ failTimes: 1 });
+    const w = startWatcher({ ...baseOpts(env), spawnOnStart: false });
+    await w.start();
+    const res = await w.spawnAgent();
+    expect(res.ok).toBe(false); // surfaces to /hub-agent text
+    expect(w.state().restarts).toBe(1);
+    env.clock.advance(WATCHER_DEFAULTS.restartBackoffMs);
+    await tick(env);
+    expect(env.spawnCalls()).toBe(2); // the supervised retry landed
+    expect(w.state().agentSessionId).toBe("agent-2"); // retry minted a new child
+    expect(w.state().restarts).toBe(0); // success resets the backoff counter
+    w.stop();
+  });
+
+  it("buildSpawnSpec output is what spawnAgent passes to the runtime (env asserted)", async () => {
+    const env = makeEnv({ sessionId: "agent-e" });
+    const w = startWatcher({
+      ...baseOpts(env),
+      spawnOnStart: false,
+      env: { ompBin: "/opt/omp/bin/omp", model: "haiku" },
+    });
+    await w.start();
+    const res = await w.spawnAgent();
+    expect(res.ok).toBe(true);
+    expect(env.spawnArgs[0]).toEqual({ name: "hub-watcher", model: "haiku" });
+    w.stop();
+  });
+});
+
 describe("catch-up pass (restart)", () => {
   it("re-derives phases and re-raises missing items WITHOUT replaying old events", async () => {
     const env = makeEnv({

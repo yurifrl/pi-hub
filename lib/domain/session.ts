@@ -79,7 +79,16 @@ export interface StatusFile {
 
 /** Raw omp event at the adapter edge (reporter → jsonl_store). */
 export type RawOmpEvent =
-  | { type: "session_start"; sessionId: string; attached: boolean; cwd: string }
+  | {
+      type: "session_start";
+      sessionId: string;
+      attached: boolean;
+      cwd: string;
+      /** session title (docs/05 §Reporter: session_start carries title); absent → keep existing */
+      title?: string;
+      /** model id reported at session_start (docs/02 §Reporter frames); absent → keep existing */
+      model?: string;
+    }
   | { type: "user_message"; sessionId: string; text: string }
   | { type: "assistant_message"; sessionId: string; text: string }
   | { type: "tool_call"; sessionId: string; tool: string; args: unknown }

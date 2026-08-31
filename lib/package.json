@@ -13,6 +13,10 @@
     "./adapters/*": {
       "types": "./adapters/*.ts",
       "import": "./adapters/*.ts"
+    },
+    "./runtime/*": {
+      "types": "./runtime/*.ts",
+      "import": "./runtime/*.ts"
     }
   },
   "scripts": {
