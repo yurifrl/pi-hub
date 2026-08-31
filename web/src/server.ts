@@ -22,7 +22,15 @@ export const startHubWeb = async (deps: HubWebDeps): Promise<{ stop(): Promise<v
   // host, the sse_bus adapter is the numbered-ring + replay mechanism
   const bus = createSseBus();
 
- @theirs
+  // Lifecycle: subscribe to the hub event bus on start; unsubscribe on stop().
+  // The web surface never publishes state (docs/01 import matrix). Each
+  // committed hub event becomes the smallest-describing /stream delta (docs/04
+  // §SSE contract); snapshot-material events are dropped here and covered by
+  // the fresh snapshot every connect/reconnect serves.
+  const unsubscribe = deps.bus.subscribe((evt) => {
+    for (const sse of sseEventsFor(evt)) {
+      bus.publish({ topic: sse.event, payload: sse.payload });
+    }
   });
 
   const handlers: RouteHandlers = {
