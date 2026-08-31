@@ -17,6 +17,10 @@
     "./runtime/*": {
       "types": "./runtime/*.ts",
       "import": "./runtime/*.ts"
+    },
+    "./ports/*": {
+      "types": "./ports/*.ts",
+      "import": "./ports/*.ts"
     }
   },
   "scripts": {

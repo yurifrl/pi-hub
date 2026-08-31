@@ -17,6 +17,7 @@ import { join } from "node:path";
 import net from "node:net";
 
 import hubFactory from "./hub";
+import type { WidgetController } from "./widget";
 import { WIDGET_KEY, createHubCommands, buildAgentSpec } from "./hub";
 import { resolveHubEnv } from "./hub_env";
 import { createHubLocal, reportToRaw } from "./hub_local";
@@ -345,7 +346,7 @@ describe("createHubCommands.hubStop — socket closed + children terminated + se
         const { env } = await makeEnv();
         const rt = makeRuntime();
         const fake = makeSocketFake();
-        const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null };
+        const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null, widget: null as WidgetController | null };
         const local = createHubLocal({ env, selfSessionId: () => state.selfSessionId, overrides: { runtime: rt.runtime, socket: fake.factory as never } });
         state.local = local;
         const commands = createHubCommands(env, state, () => rt.runtime, () => local);
@@ -368,7 +369,7 @@ describe("createHubCommands.hubStop — socket closed + children terminated + se
     it("open peer sessions are NOT archived on hub stop (docs/05 §Shutdown)", async () => {
         const { env, root } = await makeEnv();
         const rt = makeRuntime();
-        const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null };
+        const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null, widget: null as WidgetController | null };
         const local = createHubLocal({ env, selfSessionId: () => state.selfSessionId, overrides: { runtime: rt.runtime } });
         state.local = local;
         const commands = createHubCommands(env, state);
@@ -406,7 +407,7 @@ describe("createHubCommands.hubAgent — toggle the hub agent surface", () => {
         const { env } = await makeEnv();
         const rt = makeRuntime(); // the rpc (brain) runtime — must NOT see the agent spawn
         const art = makeRuntime(); // the acp (agent) runtime — the /hub-agent path
-        const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null };
+        const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null, widget: null as WidgetController | null };
         const theLocal = createHubLocal({
             env,
             selfSessionId: () => state.selfSessionId,
@@ -458,7 +459,7 @@ describe("createHubCommands.hubAgent — toggle the hub agent surface", () => {
         const { env } = await makeEnv();
         const rt = makeRuntime(); // the rpc (brain) runtime fake
         const art = makeRuntime(); // the acp (agent) runtime fake
-        const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null };
+        const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null, widget: null as WidgetController | null };
         const theLocal = createHubLocal({
             env,
             selfSessionId: () => state.selfSessionId,
@@ -490,7 +491,7 @@ describe("createHubCommands.hubAgent — toggle the hub agent surface", () => {
         // refusal through the command surface.
         const { env } = await makeEnv({ OMP_HUB_AGENT: "1" });
         const rt = makeRuntime();
-        const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null };
+        const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null, widget: null as WidgetController | null };
         let composed = 0;
         const commands = createHubCommands(env, state, () => rt.runtime, () => {
             composed++;
@@ -508,7 +509,7 @@ describe("createHubCommands.hubAgent — toggle the hub agent surface", () => {
     it("hub-agent before hub-start is refused (hub not active)", async () => {
         const { env } = await makeEnv();
         const rt = makeRuntime();
-        const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null };
+        const state = { active: false, local: null as HubLocal | null, selfSessionId: "s-self", agentActive: false, agentName: null as string | null, widget: null as WidgetController | null };
         const commands = createHubCommands(env, state);
         const out = await commands.hubAgent();
         expect(out.ok).toBe(false);
