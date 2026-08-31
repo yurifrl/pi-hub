@@ -121,7 +121,10 @@ export const buildAgentSpec = (env: HubEnv): { name: string; bin: string; args: 
     return { name: "hub-watcher", bin: env.ompBin, args: ["--mode", "acp"], env: childEnv };
 };
 
-export default function hub(pi: ExtensionAPI): void {
+/** The extension body, parameterized for tests (docs/01 §Testing: injectable
+ * edges). `connect` replaces the real hub.sock client factory so order tests
+ * run hermetically; production callers use the default export. */
+export const createHubExtension = (injections?: { connect?: Parameters<typeof createReporter>[0]["connect"] }) => (pi: ExtensionAPI): void => {
     const env = resolveHubEnv();
 
     // ---- brain guard (docs/05 §Anti-recursion guard 1) ----
@@ -182,20 +185,27 @@ export default function hub(pi: ExtensionAPI): void {
                 /* host session gone; the hub already got the write result */
             }
         },
+        ...(injections?.connect ? { connect: injections.connect } : {}),
     });
-    reporter.register(pi);
 
-    // Widget slot claimed up front (docs/05 §Entry step 1); the RENDER is
+    // ---- session_start: ctx capture BEFORE the reporter (tk-epx P0) ----
+    // pi dispatches same-extension handlers in REGISTRATION ORDER with ONE
+    // shared ExtensionContext, and SessionStartEvent carries no sessionId —
+    // identity is only reachable via ctx. This handler must therefore run
+    // BEFORE the reporter's session_start handler (registered by
+    // reporter.register below), or the first session_start of every real
+    // process resolves sessionFacts against an undefined lastCtx: sessionId
+    // "", no connect, dead frames.
+    // It also claims the widget slot (docs/05 §Entry step 1); the RENDER is
     // tk-z9a's — it consumes the subscription surface registered below and
-    // paints through this same key. Cleared on /hub-stop and shutdown.
-    // The reporter also subscribes session_start for frame emission; the two
-    // handlers are independent concerns and pi supports multiple listeners.
-    // This handler also refreshes lastCtx — the session-identity source for
-    // the reporter's sessionFacts (sessionId/title/cwd/model live in ctx).
+    // paints through this same key. Cleared on /hub-stop and shutdown. The
+    // two concerns are independent; pi supports multiple listeners.
     pi.on("session_start", (_event, ctx: ExtensionContext) => {
         lastCtx = ctx;
         if (!state.active) ctx.ui.setWidget(WIDGET_KEY, ["hub idle — /hub-start to serve"]);
     });
+
+    reporter.register(pi);
 
     // ---- /hub-start ----
     pi.registerCommand("hub-start", {
@@ -248,4 +258,9 @@ export default function hub(pi: ExtensionAPI): void {
             clear();
         }
     });
+};
+
+/** The omp entry point (docs/05 §Entry): production factory, no injections. */
+export default function hub(pi: ExtensionAPI): void {
+    createHubExtension()(pi);
 }

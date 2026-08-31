@@ -16,8 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import net from "node:net";
 
-import hubFactory from "./hub";
-import { WIDGET_KEY, createHubCommands, buildAgentSpec } from "./hub";
+import hubFactory, { WIDGET_KEY, createHubCommands, buildAgentSpec, createHubExtension } from "./hub";
 import { resolveHubEnv } from "./hub_env";
 import { createHubLocal, reportToRaw } from "./hub_local";
 import type { HubLocal } from "./hub_local";
@@ -34,6 +33,10 @@ const makePi = () => {
     const registrations: Registration[] = [];
     const commands = new Map<string, (args: string, ctx: unknown) => Promise<void>>();
     const events = new Map<string, (event: unknown, ctx: unknown) => unknown>();
+    /** registration-ORDERED event handlers — pi dispatches same-extension
+     * handlers in registration order with ONE shared ctx (the Map above is
+     * last-wins and masked that; the tk-epx P0 hid here) */
+    const eventLog: Array<{ event: string; handler: (event: unknown, ctx: unknown) => unknown }> = [];
     const widgets = new Map<string, string[] | undefined>();
     const pi = {
         registerCommand: (name: string, opts: { handler: (args: string, ctx: unknown) => Promise<void> }) => {
@@ -42,6 +45,7 @@ const makePi = () => {
         },
         on: (event: string, handler: (event: unknown, ctx: unknown) => unknown) => {
             registrations.push({ kind: "event", event });
+            eventLog.push({ event, handler });
             events.set(event, handler);
         },
         registerTool: () => {
@@ -53,7 +57,23 @@ const makePi = () => {
             },
         },
     };
-    return { pi, registrations, commands, events, widgets };
+    return {
+        pi,
+        registrations,
+        commands,
+        events,
+        eventLog,
+        widgets,
+        /** fire an event through ALL registered handlers in pi's real
+         * dispatch order (registration order, one shared ctx) */
+        dispatch: (event: string, payload: unknown, ctx: unknown) => {
+            for (const h of eventLog) {
+                if (h.event === event) h.handler(payload, ctx);
+            }
+        },
+        /** the FIRST handler registered for an event (order-observable) */
+        firstHandler: (event: string) => eventLog.find((h) => h.event === event)?.handler,
+    };
 };
 
 // ---- fake AgentRuntime (no real omp; acceptance #2) ----
@@ -277,7 +297,7 @@ describe("createHubCommands.hubStart — socket bound + brain spawned via inject
         const client = await connectClient(env.sock);
         client.report("session_start", { sessionId: "s-abc", attached: false, cwd: "/tmp/x" });
         // frame pump is synchronous on write; give the pipeline a tick
-        await Bun.sleep(5);
+        await Bun.sleep(50);
         const snap = await local.readStatus();
         expect(snap.ok).toBe(true);
         if (snap.ok) expect(snap.value.sessions["s-abc"]).toBeDefined();
@@ -377,7 +397,7 @@ describe("createHubCommands.hubStop — socket closed + children terminated + se
         // a peer announces itself, then the hub stops
         const client = await connectClient(env.sock);
         client.report("session_start", { sessionId: "s-peer", attached: false, cwd: "/tmp/x" });
-        await Bun.sleep(5);
+        await Bun.sleep(50);
         client.close();
         await commands.hubStop();
 
@@ -622,7 +642,7 @@ describe("reportToRaw + widget key", () => {
         await local.start();
         const client = await connectClient(env.sock);
         client.report("session_start", { sessionId: "s-titled", attached: false, cwd: "/tmp/x", title: "deploy canary", model: "m-1" });
-        await Bun.sleep(5);
+        await Bun.sleep(50);
         const snap = await local.readStatus();
         expect(snap.ok).toBe(true);
         if (snap.ok) {
@@ -639,11 +659,13 @@ describe("reportToRaw + widget key", () => {
 
     it("factory session_start handler claims the widget slot via ctx.ui.setWidget", async () => {
         const { env } = await makeEnv();
-        const { pi, events, widgets } = makePi();
+        const { pi, widgets, firstHandler } = makePi();
         process.env.OMP_HUB_SOCK = env.sock;
         try {
             hubFactory(pi as never);
-            const handler = events.get("session_start");
+            // the ctx-capture handler is the FIRST session_start handler
+            // registered (tk-epx P0: order matters); the Map is last-wins
+            const handler = firstHandler("session_start");
             expect(handler).toBeDefined();
             const ctx = { ui: { setWidget: (key: string, content: string[] | undefined) => widgets.set(key, content) } };
             handler!({}, ctx);
@@ -655,8 +677,151 @@ describe("reportToRaw + widget key", () => {
 });
 
 // =====================================================================
+// 7. registration-order regression (tk-epx P0)
+// =====================================================================
+// pi dispatches same-extension handlers in REGISTRATION ORDER with ONE shared
+// ExtensionContext, and SessionStartEvent carries no sessionId — session
+// identity is only reachable via ctx. The factory must therefore register the
+// lastCtx-assignment handler BEFORE reporter.register(pi), so the reporter's
+// session_start handler reads a ctx that is already captured.
+
+describe("registration order — ctx capture precedes the reporter (tk-epx P0)", () => {
+    const makeWiredEnv = async () => {
+        const { env } = await makeEnv();
+        process.env.OMP_HUB_SOCK = env.sock;
+        return env;
+    };
+
+    it("the ctx-capture session_start handler is registered BEFORE the reporter's (order observable)", async () => {
+        const env = await makeWiredEnv();
+        try {
+            const { pi, eventLog } = makePi();
+            hubFactory(pi as never);
+            const sessionStartEvents = eventLog.filter((h) => h.event === "session_start");
+            expect(sessionStartEvents.length).toBeGreaterThanOrEqual(2);
+            // Identify each handler by its side effect: the factory's ctx-capture
+            // handler paints the idle widget; the reporter's session_start handler
+            // never touches the widget (it may even throw on a bare ctx — that
+            // throw is the P0 bug itself, recorded as silent).
+            const widgetPaints: boolean[] = sessionStartEvents.map((h) => {
+                const seen: Array<string[] | undefined> = [];
+                try {
+                    h.handler({}, { ui: { setWidget: (_k: string, c: string[] | undefined) => seen.push(c) } });
+                } catch {
+                    /* the reporter reading a bare ctx — fine for this probe */
+                }
+                return seen.length > 0;
+            });
+            // handler[0] = capture (paints), handler[1] = reporter (silent).
+            // Pre-fix this was reversed → the reporter read lastCtx undefined.
+            expect(widgetPaints[0]).toBe(true);
+            expect(widgetPaints[1]).toBe(false);
+            void env;
+        } finally {
+            delete process.env.OMP_HUB_SOCK;
+        }
+    });
+
+    /** hermetic wiring: injectable connect seam through createHubExtension */
+    const makeWired = async () => {
+        const env = await makeWiredEnv();
+        const fake = makeFakeHubClient();
+        let connectCalls = 0;
+        const factory = createHubExtension({
+            connect: async () => {
+                connectCalls++;
+                return { ok: true as const, client: fake.client };
+            },
+        });
+        return { env, fake, factory, countConnect: () => connectCalls };
+    };
+
+    it("first session_start (the ONLY one a real process gets) produces the connect attempt with correct sessionId/title/cwd/model", async () => {
+        const { fake, factory, countConnect } = await makeWired();
+        try {
+            const { pi, dispatch } = makePi();
+            factory(pi as never);
+            // the ONE session_start a fresh process receives — one shared ctx
+            const ctx = {
+                sessionManager: {
+                    getSessionId: () => "s-first",
+                    getSessionName: () => "orders matter",
+                },
+                cwd: "/work/first",
+                model: { id: "aihub/glm-5.3-flash" },
+                ui: { setWidget: () => {} },
+            };
+            dispatch("session_start", {} as never, ctx);
+            // let the fire-and-forget open() run
+            await Bun.sleep(50);
+
+            // the reporter connected (first session_start already carries identity)
+            expect(countConnect()).toBe(1);
+            // attach-on-connect announced the session with the ctx facts
+            const attach = fake.reports.find((r) => r.frame === "session_start" && (r.payload as { attached?: boolean }).attached === true);
+            expect(attach).toBeDefined();
+            expect((attach!.payload as { sessionId: string }).sessionId).toBe("s-first");
+            expect((attach!.payload as { title?: string }).title).toBe("orders matter");
+            expect((attach!.payload as { cwd: string }).cwd).toBe("/work/first");
+            expect((attach!.payload as { model: string }).model).toBe("aihub/glm-5.3-flash");
+            // and the local-announcement frame (attached:false) is ALSO correct
+            const local = fake.reports.find((r) => r.frame === "session_start" && (r.payload as { attached?: boolean }).attached === false);
+            expect(local).toBeDefined();
+            expect((local!.payload as { sessionId: string }).sessionId).toBe("s-first");
+        } finally {
+            delete process.env.OMP_HUB_SOCK;
+        }
+    });
+
+    it("REVERSED order (the pre-fix bug): reporter runs first → sessionId is empty → 0 connects, no frames", async () => {
+        // The validator's empirical repro, encoded: with the reporter's
+        // session_start handler running BEFORE ctx capture (the committed
+        // pre-fix order), sessionFacts reads lastCtx === undefined → facts
+        // sessionId "" → open() early-returns, no connect, only empty-session
+        // frames queued. A real process never gets a second session_start.
+        const { fake, factory, countConnect } = await makeWired();
+        try {
+            const { pi, eventLog } = makePi();
+            factory(pi as never);
+            const ctx = {
+                sessionManager: { getSessionId: () => "s-rev", getSessionName: () => "rev" },
+                cwd: "/work/rev",
+                model: { id: "m-rev" },
+                ui: { setWidget: () => {} },
+            };
+            // dispatch in REVERSE registration order — the pre-fix behavior
+            for (const h of [...eventLog].reverse()) {
+                if (h.event === "session_start") h.handler({} as never, ctx);
+            }
+            await Bun.sleep(50);
+            // reporter saw lastCtx undefined → sessionId "" → never connected
+            expect(countConnect()).toBe(0);
+            expect(fake.reports).toEqual([]);
+        } finally {
+            delete process.env.OMP_HUB_SOCK;
+        }
+    });
+});
+
+// =====================================================================
 // helpers
 // =====================================================================
+
+/** A fake HubClient for order tests: records reports, never closes. */
+const makeFakeHubClient = () => {
+    const reports: Array<{ frame: string; payload: Record<string, unknown> }> = [];
+    const client = {
+        report: (frame: string, payload: Record<string, unknown>) => {
+            reports.push({ frame, payload });
+            return { ok: true, value: undefined } as never;
+        },
+        cmd: async () => ({ ok: true, value: {} }) as never,
+        onEvent: () => {},
+        onClose: () => {},
+        close: () => {},
+    };
+    return { client: client as unknown as import("@yurifrl/hub/adapters/unix_socket").HubClient, reports };
+};
 
 /** A connected HubClient for frames-into-the-hub assertions. */
 const connectClient = async (sockPath: string) => {
