@@ -265,10 +265,11 @@ describe("subprocess — hub binary exit codes (docs/03 §Exit codes table)", ()
     expect(code).toBe(1);
   });
 
-  it("hub (bare, stub body) → 1", async () => {
-    const { code, stderr } = await spawnHub([]);
-    expect(code).toBe(1);
-    expect(stderr).toContain("not implemented");
+  it("hub (bare, piped stdout) → static frame + muted hint, exit 0", async () => {
+    const { code, stdout } = await spawnHub([]);
+    expect(code).toBe(0);
+    expect(stdout).toContain("hub ·"); // orientation line
+    expect(stdout).toContain("run hub in a terminal for live view");
   });
 
   it("hub log s-x (read-only, stub) → 1, never 2 — no socket needed", async () => {
