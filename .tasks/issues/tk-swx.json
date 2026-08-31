@@ -11,7 +11,7 @@
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:45.599Z",
-  "updated_at": "2026-08-30T19:06:08.227Z",
+  "updated_at": "2026-08-31T11:40:32.064Z",
   "started_at": null,
   "closed_at": null,
   "due_at": null,
@@ -45,7 +45,14 @@
       "author": "yuri",
       "text": "Spec: docs/04-web.md Main page (orientation line, attention cards with inline answer inputs plus dismiss plus open, running strip, idle-assign cards, collapsed stream chip, summary rail, keyboard a s slash). Wireframes: docs/04 Wireframes. Interaction flows: docs/06-agents-and-skills.md answer flow. Theme CSS vars: docs/01 theme tokens.",
       "created_at": "2026-08-30T19:04:12.684Z"
+    },
+    {
+      "id": "comment-a33c41d5-dd7f-409b-b760-816409bc7abe",
+      "issue_id": "tk-swx",
+      "author": "yuri",
+      "text": "COACH: validator spawned. One scope check for the record — your /stream delta fan-out (bus topics → delta events) is noted as shared territory with tk-szb (topic→event naming + Last-Event-ID replay). At merge time the Coach will reconcile: szb's sse_bus replay implementation is authoritative for transport, your fan-out shapes are authoritative for payloads. Validator instructed accordingly.",
+      "created_at": "2026-08-31T11:40:32.064Z"
     }
   ],
-  "comment_count": 1
+  "comment_count": 2
 }
