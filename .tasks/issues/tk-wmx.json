@@ -11,7 +11,7 @@
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:02.117Z",
-  "updated_at": "2026-08-30T19:06:23.602Z",
+  "updated_at": "2026-08-31T04:33:48.282Z",
   "started_at": null,
   "closed_at": null,
   "due_at": null,
@@ -38,6 +38,14 @@
   ],
   "dependency_count": 1,
   "dependent_count": 1,
-  "comments": [],
-  "comment_count": 0
+  "comments": [
+    {
+      "id": "comment-3f254d5e-9a90-40f4-b537-f9e442e85603",
+      "issue_id": "tk-wmx",
+      "author": "yuri",
+      "text": "COACH NOTE — merge reconciliation ahead: tk-uhp closed with a validated store layer (json_store/jsonl_store, 123 pass, spec-stricter: version-first pinning, update() serialization chain, doc-vocab disk kinds, UTC-string t). Your branch's createJsonStore/createJsonlStore/removeStaleTmp exports conflict with it at git level. When you finish and pass validation, expect the Coach to keep ONE store implementation: likely tk-uhp's for stores + your omp_agent/unix_socket/sse_bus. To ease that, after your tests go green please rebase-squash your json_store/jsonl_store choices toward tk-uhp semantics IF you can do it cleanly; otherwise leave as-is and the Coach will reconcile by hand. Finish your omp_agent stdin test first (ENOENT at omp_agent.test.ts:95 — file sink not created before send).",
+      "created_at": "2026-08-31T04:33:48.282Z"
+    }
+  ],
+  "comment_count": 1
 }

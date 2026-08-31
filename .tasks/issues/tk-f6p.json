@@ -4,16 +4,16 @@
   "id": "tk-f6p",
   "title": "agents: hub-watcher.md + pending-agent.md definitions",
   "description": "",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "task",
   "owner": null,
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:47.181Z",
-  "updated_at": "2026-08-30T19:06:09.885Z",
+  "updated_at": "2026-08-31T04:06:46.104Z",
   "started_at": null,
-  "closed_at": null,
+  "closed_at": "2026-08-31T04:05:28.712Z",
   "due_at": null,
   "defer_until": null,
   "parent": null,
@@ -45,7 +45,21 @@
       "author": "yuri",
       "text": "Spec: docs/06-agents-and-skills.md Agent files section: agents/hub-watcher.md (thin role shell, read plus list tools only, system-prompt append skills/hub-watcher, surface watcher) and agents/pending-agent.md (demo custom surface, kind agent, surface pending, write scoped to its own surface.json — the interface IS the file contract). Format: match-day pattern agents dir.",
       "created_at": "2026-08-30T19:05:03.937Z"
+    },
+    {
+      "id": "comment-2bd53037-96cc-447b-8107-3d630a1d1fd6",
+      "issue_id": "tk-f6p",
+      "author": "yuri",
+      "text": "VERIFIED PASS — validator: diff exactly 2 files (agents/hub-watcher.md 38L, agents/pending-agent.md 35L); both frontmatters parse via yaml.safe_load and match spec sketches field-for-field (watcher: kind agent, surface watcher, tools read/grep/hub_list_sessions/hub_attention, model ${OMP_HUB_MODEL}, auto-exit false, system-prompt append skills/hub-watcher, no send/assign/edit/write; pending-agent: surface pending, tools read/grep/write/hub_list_sessions/hub_send_message). Bodies match spec role sketches — thin role shell with rubric delegated to merged skills/hub-watcher; surface.json file contract with write pinned to one file. skills/hub-watcher/SKILL.md present on branch. bun test lib/ 92 pass 0 fail. Docs-only, no browser surface.",
+      "created_at": "2026-08-31T04:05:28.827Z"
+    },
+    {
+      "id": "comment-3f9d2307-e2c9-4f10-9388-74a9b42516f1",
+      "issue_id": "tk-f6p",
+      "author": "yuri",
+      "text": "POST-MERGE PASS: (1) git diff d1f594b..f810913 = exactly 2 file additions: agents/hub-watcher.md (38 lines), agents/pending-agent.md (35 lines), no stray hunks. (2) Merged main f810913: both files exist under agents/ at package root per docs/01-architecture.md line 123; YAML frontmatter parses; watcher tools = read, grep, hub_list_sessions, hub_attention — no send/assign/edit/write; skills/hub-watcher/SKILL.md present (append target). (3) bun test lib/: 92 pass, 0 fail. (4) No browser surface — docs-only change.",
+      "created_at": "2026-08-31T04:06:46.104Z"
     }
   ],
-  "comment_count": 1
+  "comment_count": 3
 }

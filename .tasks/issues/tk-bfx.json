@@ -4,14 +4,14 @@
   "id": "tk-bfx",
   "title": "lib: domain types, ports, theme, public index (hexagonal core)",
   "description": "",
-  "status": "open",
+  "status": "in_progress",
   "priority": 1,
   "issue_type": "task",
   "owner": null,
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:01.781Z",
-  "updated_at": "2026-08-30T19:06:23.280Z",
+  "updated_at": "2026-08-31T03:50:04.055Z",
   "started_at": null,
   "closed_at": null,
   "due_at": null,
@@ -29,6 +29,21 @@
   "dependencies": [],
   "dependency_count": 0,
   "dependent_count": 5,
-  "comments": [],
-  "comment_count": 0
+  "comments": [
+    {
+      "id": "comment-e3cc667c-e72a-4550-9087-e5d99ef447b5",
+      "issue_id": "tk-bfx",
+      "author": "yuri",
+      "text": "NOTE (worker-facing, from validator report): matchesLogEntry casts entry.kind to AttentionKind — disjoint unions make the filter always-false; latent trap for the logTail adapter (tk-wmx). Fix belongs to the adapter implementer or a small lib follow-up; do not silently carry the cast forward.",
+      "created_at": "2026-08-31T03:47:44.700Z"
+    },
+    {
+      "id": "comment-b3fb612d-3fd9-4dcb-800a-8273fa387421",
+      "issue_id": "tk-bfx",
+      "author": "yuri",
+      "text": "POST-MERGE PASS: diff 45e4f1c..eae6a6d exactly tk-bfx scope (lib/domain 5 modules+tests, lib/ports 6, theme+test, barrel+test, package.json, tsconfig.json, bun.lock — 23 files, no strays). bun test lib/: 92 pass, 0 fail, 1253 expect(). bunx tsc --noEmit: exit 0. Import matrix: no @earendil imports in lib/ (grep exit 1); no node:/bun: runtime imports in lib/domain/ lib/ports/ source (bun:test only in colocated *.test.ts per docs/01 testing strategy). No browser surface — lib-only merge, zero web/ hunks.",
+      "created_at": "2026-08-31T03:50:04.055Z"
+    }
+  ],
+  "comment_count": 2
 }

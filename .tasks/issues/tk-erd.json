@@ -4,16 +4,16 @@
   "id": "tk-erd",
   "title": "skills: hub-ops + hub-watcher SKILL.md files",
   "description": "",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "task",
   "owner": null,
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:46.851Z",
-  "updated_at": "2026-08-30T19:06:09.565Z",
+  "updated_at": "2026-08-31T04:00:59.143Z",
   "started_at": null,
-  "closed_at": null,
+  "closed_at": "2026-08-31T03:59:25.146Z",
   "due_at": null,
   "defer_until": null,
   "parent": null,
@@ -37,7 +37,7 @@
     }
   ],
   "dependency_count": 1,
-  "dependent_count": 0,
+  "dependent_count": 1,
   "comments": [
     {
       "id": "comment-f431998a-74d7-45c3-8d32-ab7e8a8a4b8b",
@@ -45,7 +45,14 @@
       "author": "yuri",
       "text": "Spec: docs/06-agents-and-skills.md Skills section: skills/hub-ops/SKILL.md (nine hub tools one rule each, raise vs answer, summary style max 2 sentences, availability rule) and skills/hub-watcher/SKILL.md (phase rubric, attention kinds rubric with counter-examples, resolution recording). Format: SKILL.md uppercase with YAML frontmatter name description.",
       "created_at": "2026-08-30T19:04:37.108Z"
+    },
+    {
+      "id": "comment-4cf818a1-8ec0-4b47-8883-fab43a903f6c",
+      "issue_id": "tk-erd",
+      "author": "yuri",
+      "text": "POST-MERGE PASS: (1) git diff eae6a6d..d1f594b = exactly 2 file additions, skills/hub-ops/SKILL.md (50 lines) + skills/hub-watcher/SKILL.md (72 lines), 122 insertions, zero stray hunks. (2) Both exist on merged main d1f594b; YAML frontmatter parses (python3+yaml); names hub-ops / hub-watcher; SKILL.md uppercase convention held; skills/ at package root matches docs/01-architecture.md Package layout lines 120-122 exactly. (3) bun test lib/: 92 tests across 7 files, 0 fail, 1253 expect() calls. (4) No browser surface — docs-only change. Merge d1f594b validated.",
+      "created_at": "2026-08-31T04:00:59.143Z"
     }
   ],
-  "comment_count": 1
+  "comment_count": 2
 }

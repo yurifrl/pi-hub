@@ -4,16 +4,16 @@
   "id": "tk-sne",
   "title": "scaffold package.json workspaces lib/cli/web with optional earendil peerDeps",
   "description": "",
-  "status": "open",
+  "status": "closed",
   "priority": 0,
   "issue_type": "task",
   "owner": null,
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:02.403Z",
-  "updated_at": "2026-08-30T19:07:18.642Z",
+  "updated_at": "2026-08-31T03:44:46.226Z",
   "started_at": null,
-  "closed_at": null,
+  "closed_at": "2026-08-31T03:41:26.634Z",
   "due_at": null,
   "defer_until": null,
   "parent": null,
@@ -36,7 +36,21 @@
       "author": "yuri",
       "text": "Spec: docs/01-architecture.md Package layout (root manifest contract), Module boundaries rule on workspaces wiring. Reference implementation: pi-fbr-match-day/package.json (peerDepsMeta optional).",
       "created_at": "2026-08-30T19:07:18.642Z"
+    },
+    {
+      "id": "comment-20bb551e-8083-464a-92a3-96e6f392f3fe",
+      "issue_id": "tk-sne",
+      "author": "yuri",
+      "text": "VERIFIED PASS — validator run on 3c366e1 (matchday/tk-sne). Evidence (validator transcript): root package.json @yurifrl/pi-hub private, workspaces [lib cli web], optional earendil peerDeps+peerDepsMeta match docs/01 root manifest contract; lib exports only . barrel + ./adapters/*; bin hub -> cli/src/bin.ts mode 100755 bun shebang; bun install frozen-lockfile clean (3 packages, 4 modules); node_modules/.bin/hub --help exit 0; import('@yurifrl/hub') and import('@yurifrl/hub/adapters/unix_socket') both resolve; workspace links @yurifrl/hub@workspace:lib, hub-cli, hub-web confirmed via bun pm ls. No browser surface (scaffold-only task).",
+      "created_at": "2026-08-31T03:41:26.486Z"
+    },
+    {
+      "id": "comment-deef7994-f485-49eb-b963-7818b2f77787",
+      "issue_id": "tk-sne",
+      "author": "yuri",
+      "text": "POST-MERGE PASS: merge 45e4f1c scope verified — diff 4a9306d..45e4f1c contains exactly scaffold: 4 manifests (root @yurifrl/pi-hub w/ workspaces [lib cli web] + optional @earendil-works peerDeps/Meta; lib @yurifrl/hub barrel+./adapters/* exports; cli @yurifrl/hub-cli bin hub; web @yurifrl/hub-web), 18 skeleton .ts/.gitkeep comment-only files, .gitignore, bunfig.toml (hoisted linker), bun.lock, PLAN.md verification note. No out-of-scope hunks. Behavior on merged main: bun install --frozen-lockfile OK (3 pkgs, 32ms), node_modules/.bin/hub --help exits 0, import @yurifrl/hub = barrel OK, import @yurifrl/hub/adapters/unix_socket = adapters OK. No browser surface exists (scaffold-only, web/src = comments). Note (non-blocking): root package.json carries pi.extensions -> ./extensions/hub.ts which does not exist yet; outside docs/01 root contract lines 130-148, forward reference for composition root.",
+      "created_at": "2026-08-31T03:44:46.225Z"
     }
   ],
-  "comment_count": 1
+  "comment_count": 3
 }
