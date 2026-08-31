@@ -7,8 +7,8 @@ import type { HubError, StatusFile, SummaryLine } from "@yurifrl/hub";
 import { formatSse, type SseBus, type SseMessage } from "@yurifrl/hub/adapters/sse_bus";
 import { CSP, agentPage, archivedSessionPage, archivePage, consolePage, sessionNotFoundPage, sessionPage } from "../html";
 import { archiveIndex, resolveAgentPage, resolveDetail, resolveSurface, type DetailEnv } from "../detail";
-import { buildSnapshot } from "../snapshot";
-import type { HubWebTheme, SseConn, SessionDetail, SnapshotPayload } from "../types";
+import { buildSnapshot, parseSince } from "../snapshot";
+import type { HubWebTheme, LogViewEntry, SseConn, SessionDetail, SnapshotPayload } from "../types";
 
 // ---- shared handlers passed in by server.ts (I/O lives there) ----
 
@@ -27,6 +27,8 @@ export type RouteHandlers = {
   send(sessionId: string, text: string): Promise<HubError | null>;
   /** POST /api/dismiss {itemId} */
   dismiss(itemId: string): Promise<HubError | null>;
+  /** GET /api/session/:id/log?since= — bounded log tail through the logs port */
+  sessionLog(id: string, since?: string): Promise<LogViewEntry[]>;
 };
 
 export type RouteEnv = {
@@ -182,8 +184,11 @@ export const route = async (
     if (session) {
       const id = decodeURIComponent(session[1]!);
       // ?since= cursor: only entries strictly newer than it (docs/04 §Session
-      // detail: bounded tail + cursor param for live tailing)
+      // detail: bounded tail + cursor param for live tailing). parseSince
+      // accepts epoch-ms number-strings and UTC strings; anything else → 400
+      // (an explicit error beats silently rendering an empty/widened tail).
       const sinceParam = new URL(request.url).searchParams.get("since");
+      if (sinceParam !== null && parseSince(sinceParam) === null) return json({ error: "invalid since cursor" }, 400);
       const status = await h.status();
       const detail = await resolveDetail(id, status, env.detail, sinceParam !== null ? { since: sinceParam } : {});
       if (detail === null) return html(sessionNotFoundPage(buildSnapshot(status), env.theme), 404);
@@ -259,6 +264,18 @@ export const route = async (
     return json(await h.snapshot(), 200);
   }
 
+  // JSON log poll endpoint (docs/04 §Session detail: the client's ?since=
+  // cursor net tails the log over JSON, not the HTML page). Same cursor
+  // vocabulary as the HTML route: epoch-ms number-strings or UTC strings,
+  // strictly-newer, numeric comparison against LogViewEntry.t (epoch ms).
+  const logPoll = pathname.match(/^\/api\/session\/([^/]+)\/log$/);
+  if (method === "GET" && logPoll) {
+    const id = decodeURIComponent(logPoll[1]!);
+    const sinceParam = new URL(request.url).searchParams.get("since");
+    if (sinceParam !== null && parseSince(sinceParam) === null) return json({ error: "invalid since cursor" }, 400);
+    return json({ entries: await h.sessionLog(id, sinceParam ?? undefined) }, 200);
+  }
+
   if (method === "GET" && pathname === "/stream") {
     return streamResponse(request, { bus: env.bus, conns: env.sseConns }, h.snapshot);
   }
@@ -272,6 +289,7 @@ export const route = async (
     pathname === "/stream" ||
     /^\/session\/[^/]+$/.test(pathname) ||
     /^\/archive\/[^/]+$/.test(pathname) ||
+    /^\/api\/session\/[^/]+\/log$/.test(pathname) ||
     ["/api/answer", "/api/assign", "/api/send", "/api/dismiss"].includes(pathname);
   if (knownPath) {
     const postOnly = ["/api/answer", "/api/assign", "/api/send", "/api/dismiss"].includes(pathname);

@@ -54,16 +54,36 @@ const toViewEntry = (line: DiskLogLine): LogViewEntry => ({
 });
 
 /**
+ * `?since=` cursor parse (docs/04 §Session detail: live tailing). Two cursor
+ * vocabularies are accepted, compared NUMERICALLY against entry times:
+ * - epoch-ms number-strings (`"1756572000000"`) — the detail-page client's
+ *   cursor, the same unit as the `log` SSE delta's `entry.t` and the JSON
+ *   poll endpoint's `LogViewEntry.t`;
+ * - UTC strings (`2026-08-30T14:03:00.000Z`) — the disk `t` shape (docs/02).
+ * Returns the epoch-ms floor, `undefined` when no cursor was given, `null`
+ * when unparseable (the routes reject that with 400 — an explicit error beats
+ * a silent empty/widened set that hides a unit bug).
+ */
+export const parseSince = (since: string | undefined): number | null | undefined => {
+  if (since === undefined) return undefined;
+  if (/^\d+$/.test(since)) return Number(since);
+  const ms = Date.parse(since);
+  return Number.isNaN(ms) ? null : ms;
+};
+
+/**
  * `?since=` cursor narrowing + bounded cap + disk→view shape, shared by the
  * open and archived flavors (docs/04 §Session detail: "bounded tail +
- * `?since=` cursor param for live tailing"). `since` (a prior entry's `t`,
- * UTC string on disk) keeps strictly-newer entries so a live tail page never
- * re-reads what it already rendered.
+ * `?since=` cursor param for live tailing"). Keeps entries strictly newer
+ * than the cursor (parseSince vocabulary: epoch-ms or UTC string) so a live
+ * tail page never re-reads what it already rendered; an invalid cursor yields
+ * the empty set (the routes 400 before this runs — defense in depth).
  */
 export const toLogViewEntries = (lines: DiskLogLine[], since?: string): LogViewEntry[] => {
-  const floor = since !== undefined ? Date.parse(since) : undefined;
+  const floor = parseSince(since);
+  if (floor === null) return [];
   return lines
-    .filter((l) => floor === undefined || Number.isNaN(floor) || Date.parse(l.t) > floor)
+    .filter((l) => floor === undefined || Date.parse(l.t) > floor)
     .slice(-LOG_MAX_LINES)
     .map(toViewEntry);
 };

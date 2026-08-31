@@ -10,4 +10,4 @@ export {
   resolveSurface,
 } from "./detail";
 export type { AgentPageInfo, HubArchiveEntry, HubArchiveRecord, HubWebArchive, HubWebDeps, HubWebLogs, HubWebSurfaces, HubWebTheme, LogLine, LogViewEntry, SessionDetail, SessionDigest, SnapshotPayload, SseConn, SurfaceSection, SurfaceState } from "./types";
-export { buildSnapshot, sessionDetail, toLogViewEntries, synthesizedDigest, LOG_MAX_LINES } from "./snapshot";
+export { buildSnapshot, parseSince, sessionDetail, toLogViewEntries, synthesizedDigest, LOG_MAX_LINES } from "./snapshot";

@@ -107,10 +107,13 @@ describe("session detail — open flavor (docs/04 §Session detail)", () => {
     expect(openPage).toContain("sessionId");
   });
 
-  it("client script applies log/phase deltas for this session only + ?since= tail", () => {
+  it("client script applies log/phase deltas for this session only + JSON ?since= tail", () => {
     expect(openPage).toContain('"/stream"');
     expect(openPage).toContain("d.sessionId === id");
-    expect(openPage).toContain("?since=");
+    // the 5s poll safety net tails the JSON endpoint, never the HTML page
+    // (pre-fix it fetched /session/:id?since= and JSON.parse()d the HTML)
+    expect(openPage).toContain('"/api/session/" + encodeURIComponent(id) + "/log?since=" + lastT');
+    expect(openPage).not.toContain('"/session/" + encodeURIComponent(id) + "?since=');
     expect(openPage).toContain('"tilt"');
   });
 

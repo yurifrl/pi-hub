@@ -7,7 +7,7 @@ import { TOKEN_HEX } from "@yurifrl/hub";
 import { createSseBus } from "@yurifrl/hub/adapters/sse_bus";
 import { DEFAULT_AGENT_NAME, detailEnvFrom } from "./detail";
 import { route, type RouteHandlers } from "./routes/table";
-import { buildSnapshot } from "./snapshot";
+import { buildSnapshot, toLogViewEntries } from "./snapshot";
 import { sseEventsFor } from "./sse";
 import type { HubWebDeps, HubWebTheme, SseConn } from "./types";
 
@@ -66,6 +66,13 @@ export const startHubWeb = async (deps: HubWebDeps): Promise<{ stop(): Promise<v
     dismiss: async (itemId) => {
       const reply = await deps.commands.dispatch({ cmdId: crypto.randomUUID(), op: "attention", args: { action: "dismiss", id: itemId }, by: "web" });
       return reply.ok ? null : reply.error;
+    },
+    sessionLog: async (id, since) => {
+      const raw = (await deps.logs?.tail(id, since)) ?? [];
+      // disk→view shape (t → epoch ms) + bounded cap + cursor narrowing; an
+      // invalid cursor yields the empty set — the route already 400s it, this
+      // is defense in depth
+      return toLogViewEntries(raw, since);
     },
   };
 

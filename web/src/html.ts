@@ -500,9 +500,10 @@ const detailScript = (id: string, lastT: number): string =>
     '<span class="lt">' + clock(e.t) + '</span><span class="lk">' + (GLYPH[e.kind] || "\\u00b7") + " " + esc(e.kind) + '</span><span class="lx">' + esc(e.text) + "</span></div>";
   const log = document.getElementById("detail-log");
   const post = (path, body) => fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  // live tail: fetch only entries newer than the last rendered line (?since=)
+  // live tail: JSON poll endpoint — only entries newer than the last rendered
+  // line (?since=), never the HTML page (the page has no JSON variant)
   const tail = async () => {
-    const res = await fetch("/session/" + encodeURIComponent(id) + "?since=" + lastT);
+    const res = await fetch("/api/session/" + encodeURIComponent(id) + "/log?since=" + lastT);
     if (!res.ok) return;
     const d = JSON.parse(await res.text());
     for (const e of d.entries) { log.insertAdjacentHTML("beforeend", line(e)); if (e.t > lastT) lastT = e.t; }
