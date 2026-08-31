@@ -2,18 +2,18 @@
   "schema_version": 1,
   "_type": "issue",
   "id": "tk-sj9",
-  "title": "extensions: 9 hub_* tools — list send call_tool spawn kill archive attention answer assign",
+  "title": "extensions: 9 hub_* tools \u2014 list send call_tool spawn kill archive attention answer assign",
   "description": "",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "task",
   "owner": null,
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:16.074Z",
-  "updated_at": "2026-08-31T19:34:43.586Z",
+  "updated_at": "2026-08-31T19:51:30.537Z",
   "started_at": null,
-  "closed_at": null,
+  "closed_at": "2026-08-31T19:51:30.537Z",
   "due_at": null,
   "defer_until": null,
   "parent": null,
@@ -124,12 +124,19 @@
       "created_at": "2026-08-30T19:03:20.810Z"
     },
     {
-      "id": "comment-65ccae7f-761c-4f66-86b5-353205d3b294",
+      "id": "comment-21df667d-9604-434c-acbb-42ee51e21d3e",
       "issue_id": "tk-sj9",
       "author": "yuri",
-      "text": "nine hub_* tools implemented on matchday/tk-sj9 (8b84a3f), pushed.\n\nextensions/hub_tools.ts - all nine registered per docs/05 Tools:\n- TypeBox schemas matching docs/05 sketches verbatim (wait_seconds 0-600 int, optional); descriptions registered word-for-word from docs/05.\n- Routing per docs/05 dispatch rule, resolved at call time: hub-local when state.active and selfSessionId nonempty and local present (tk-hai closure seam, mirrored structurally - hub.ts entry guard and hub_local untouched) via local.core.surface.dispatch by plugin; peer relay otherwise via connectHubClient cmd frame, correlated reply, client closed after.\n- Per-tool timeouts per docs/05 Routing lines: list 10s; send max(wait*1000+15s,30s); tool wait*1000+30s; spawn 60s; kill/archive/answer/assign 15s; attention 10s. Carried into the client deadline; timeout expiry is an isError envelope, never a rejection.\n- Error rules: every failure path (validation, unreachable hub, op error, thrown body) resolves an isError tool result; catch-all in withSchema. hub_call_tool parses args JSON once; invalid JSON errors before any frame. tool op payload is docs/02 wire shape sessionId/tool/args.\n- Result normalization: per-op renderers for list (roster+attention lines), spawn, kill, attention; others JSON. details carry op + raw reply/error.\n\nAcceptance evidence:\n- bun test workspace green: 597 pass / 0 fail, 10 consecutive full-suite runs after de-flaking 3 pre-existing Bun.sleep(5) roster waits in hub.test.ts (raced under load; replaced with status polling - no assertion changed).\n- bunx tsc --noEmit: 0 errors.\n- Tests per tool: schema validation (missing required fields, bounds -1/0.5/601 rejected vs 600 accepted, non-object args, invalid JSON in hub_call_tool, explode-proof catch-all); routing matrix (all nine hub-local ops list send tool spawn kill archive attention answer assign with by plugin and exact op args; relay same op+args; isHubLocal negative cases; timeouts asserted incl. formulas); e2e against a real temp hub.sock: relay (cmd frame to dispatch to reply to tool result, roster assertions) and hub-local through the real surface, dead-socket hub-unreachable envelope; registration (nine ToolDefinitions, execute guard, factory registers nine, brain guard still zero registrations).\n\nLeft OPEN for validator.",
-      "created_at": "2026-08-31T19:34:43.586Z"
+      "text": "VERIFIED PASS",
+      "created_at": "2026-08-31T19:51:02.977Z"
+    },
+    {
+      "id": "comment-3fcdeabe-50a4-4f65-8934-e4bcf3142f06",
+      "issue_id": "tk-sj9",
+      "author": "yuri",
+      "text": "VERIFIED PASS: (1) 597/0 x3 bun test runs, bunx tsc --noEmit = 0. (2) Pass 1 hunk review: 9/9 tool names + registered descriptions verbatim vs docs/05 \u00a7Tools; wait_seconds Type.Integer 0-600 optional (bounds tested: -1/0.5/601 reject, 600 pass); request-payload mapping = docs/02 (send {sessionId,text,waitMs>0}, tool {sessionId,tool,args-object after JSON.parse}, kill/archive/assign sessionId, answer {id,text}, attention list); timeout formulas exact (send max(w*1000+15s,30s), tool w*1000+30s, list/attention 10s, spawn 60s, kill/archive/answer/assign 15s); timeout expiry + connect failure + thrown body all isError envelopes, never rejection. hub.ts diff additive-only (import + register loop placed after brain early-return guard \u2014 brain test asserts zero registrations); hub_local.ts/lib untouched; scope = hub_tools.ts + tests + hub.ts registration + 3 de-flaked hub.test.ts sleeps (assertions unchanged, polling only). (3) Mutation probes: (a) catch-all rethrow -> 'bodies never throw even when deps explode' FAILS as expected; (b) send timeout 15s->5s -> timeout test FAILS as expected; (c) reply correlation corrupted to FIFO in lib/adapters/unix_socket.ts -> 597 still GREEN: no concurrent-calls correlation test exists (gap; per-cmdId pending map + fresh client per call is correct by design). All mutations reverted byte-identical (git diff empty). (4) Live e2e vs real hub.sock: raw cmd frame -> {v:1,ch:'reply',cmdId:'raw-1',ok:true,result:{queued:true}}; relay hub_send_message -> queued:true isError:false; hub-local hub_attention -> surface.dispatch {name:'attention',args:{action:'list'},by:'plugin'}; dead socket -> isError:true 'hub unreachable ... /hub-start'. Minor notes, non-blocking: wait_seconds .describe wording differs from per-tool docs sketches ('default 0' shared vs tool's 'default 240'); hub replies {queued:true} immediately so wait_seconds today only bounds the await (hub-side reply-wait is lib scope); no concurrent-calls test (probe c gap).",
+      "created_at": "2026-08-31T19:51:22.334Z"
     }
   ],
-  "comment_count": 13
+  "comment_count": 14
 }
