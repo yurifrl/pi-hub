@@ -11,7 +11,7 @@
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:45.922Z",
-  "updated_at": "2026-08-31T15:02:34.177Z",
+  "updated_at": "2026-08-31T16:04:02.051Z",
   "started_at": null,
   "closed_at": null,
   "due_at": null,
@@ -66,7 +66,21 @@
       "author": "yuri",
       "text": "tk-nbw worker FINAL: complete + validated locally. Evidence: (1) bun test web/ = 78 pass / 0 fail (358 workspace / 0 fail); (2) tsc --noEmit clean (0 errors); (3) bun build check green. Scope delivered: GET /session/:id open flavor (full log via status.json log LINK through injected async logs port, bounded tail 400 + ?since= strictly-newer cursor, phase timeline w/ phaseHistory fallback, tool bars grouped per tool w/ ok/err dots, pinned send box → POST /api/send, /stream log+phase deltas scoped to the session id, 5s ?since= poll safety net); archived flavor data-driven (closed badge, closedAt/closedBy, final summary + resolutions pinned above log, read-only note, no send box/script); GET /session/:id over closed id renders archived flavor; GET /archive month-grouped index newest first; GET /archive/:id 404s for non-archived ids; POST /api/send to closed → 409 session closed (denied HubError mapping); GET /agent surface registry (watcher synthesized from status.json w/ digest+attention counts+last summary, pending file-backed via surfaces port w/ 5-min stale marking, unknown agentSurface id → generic card never 404, no agent → empty state); hue via CSS vars only, zero hex in page bodies. Commits: ab87d71 (feat), 4e5bfbd (tracker sync). Pushed origin/matchday/tk-nbw. Leaving OPEN for validator.",
       "created_at": "2026-08-31T15:02:34.177Z"
+    },
+    {
+      "id": "comment-e12b2f19-683e-4b4b-bd37-9caccd52056b",
+      "issue_id": "tk-nbw",
+      "author": "yuri",
+      "text": "REJECT: web/src/html.ts detailScript poll-net broken end-to-end. (1) html.ts:505 tail() fetches /session/:id?since= which returns the full HTML page, then :507 JSON.parse(html) throws every 5s (and on every snapshot/summary SSE event) - the poll net and its snapshot-refetch never parse anything; docs/04 says ?since= narrows the page render but there is no JSON variant, so the client-side cursor net is dead code. (2) Even if it parsed, cursor vocabulary mismatch duplicates: client lastT is epoch-ms (sse.ts:39 log delta entry.t is a number; html.ts:494 lastT = number), request sends ?since=<epoch-ms-string>, server Date.parse(that) = NaN (snapshot.ts:64), and toLogViewEntries NaN-guard snapshot.ts:66 intentionally widens (Number.isNaN(floor) -> keep all). Proven: bun repro with numeric since returns all 6 lines instead of the 2 strictly newer. Net effect: every 5s poll appends the whole tail again -> unbounded DOM duplication on a long-lived page; log SSE deltas still work, so page looks fine briefly, then duplicates. Everything else verified PASS: bun test web 78/0, workspace 358/0, tsc clean; live boot port 0 in-memory ports: open flavor (log via port LINK not embedded, phaseHistory timeline, tool bars ok/err dots, send box POST /api/send, hue CSS-var only, esc incl. script-close breakout), server-side ?since= strictly-newer filter, archived flavor (ARCHIVED badge, closedAt/By, final summary pinned above log div, resolutions, no send box/no EventSource), POST send closed1 -> 409 session closed via existing errorJson denied mapping, archive index month-grouped, /archive/ghost 404, /archive/closed1 archived, /session/ghost 404 lists open, agent page empty state + watcher card (digest/counts/link) + unknown agentSurface id generic card 200 + pending id no-file degrade 200. Deltas session-scoped (d.sessionId === id gate). Fix direction: client poll needs a JSON endpoint (e.g. /api/session/:id/entries?since= reusing toLogViewEntries) or drop the poll net; normalize the since cursor (accept epoch-ms number-string: if it is all digits use Number, else Date.parse).",
+      "created_at": "2026-08-31T15:38:04.358Z"
+    },
+    {
+      "id": "comment-a7aa87c1-4bc5-4d6b-acfa-88dc9cd6c040",
+      "issue_id": "tk-nbw",
+      "author": "yuri",
+      "text": "fix-round worker: poll-net double-bug fixed, commit 94b864e. (1) New JSON poll endpoint GET /api/session/:id/log?since= returning {entries:[LogViewEntry,...]} strictly newer than the cursor — reuses toLogViewEntries (bounded 400-line tail + cursor) over the injected logs port; client 5s poll now targets it (html.ts detailScript), never the HTML page. (2) parseSince: epoch-ms number-strings and UTC strings parse to an epoch-ms floor, compared NUMERICALLY against LogViewEntry.t — same unit as the log SSE delta entry.t (no unit drift); invalid cursor rejected with 400 on both HTML and JSON routes (explicit error over silent widen/empty — noted choice), empty-set fallback in toLogViewEntries as defense in depth. Tests: new web/src/log-poll.test.ts (parseSince vocabulary, strictly-newer filtering incl. epoch-ms cursor, live HTTP JSON shape / 400 / 405 / unknown-session empty / POST 405; validator repro pinned: epoch-ms cursor over HTTP returns only strictly-newer lines, was all-6 pre-fix) + detail-page client-script test pins the JSON route; new tests verified FAILING on pre-fix code (epoch-ms cursor widened 5/5 pre-fix vs 3 expected). Re-verified: bun test web/ 92 pass 0 fail; full workspace 372 pass 0 fail; tsc --noEmit clean; bun build web green. Leaving OPEN for validator.",
+      "created_at": "2026-08-31T16:04:02.050Z"
     }
   ],
-  "comment_count": 4
+  "comment_count": 6
 }
