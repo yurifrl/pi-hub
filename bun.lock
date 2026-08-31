@@ -22,6 +22,9 @@
       "bin": {
         "hub": "./src/bin.ts",
       },
+      "dependencies": {
+        "commander": "14.0.2",
+      },
     },
     "lib": {
       "name": "@yurifrl/hub",
@@ -44,6 +47,8 @@
     "@yurifrl/hub-web": ["@yurifrl/hub-web@workspace:web"],
 
     "bun-types": ["bun-types@1.4.0", "https://orbit-flutter-af768sf2xs.fbr.land/npm/npm-proxy/bun-types/-/bun-types-1.4.0.tgz", { "dependencies": { "@types/node": "*" } }, "sha512-iIKw23BspnQQYd3prITOBxeUsxBHnwzX6YJfGMuNOZzeNcMmVqzIIVGRm1l69ogaPQmb4wB6BN8mA5bE9YuC5Q=="],
+
+    "commander": ["commander@14.0.2", "https://orbit-flutter-af768sf2xs.fbr.land/npm/npm-proxy/commander/-/commander-14.0.2.tgz", {}, "sha512-TywoWNNRbhoD0BXs1P3ZEScW8W5iKrnbithIl0YH+uCmBd0QpPOA8yc82DS3BIE5Ma6FnBVUsJ7wVUDz4dvOWQ=="],
 
     "undici-types": ["undici-types@8.3.0", "https://orbit-flutter-af768sf2xs.fbr.land/npm/npm-proxy/undici-types/-/undici-types-8.3.0.tgz", {}, "sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ=="],
   }

@@ -11,9 +11,9 @@
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:27.561Z",
-  "updated_at": "2026-08-30T19:05:54.548Z",
+  "updated_at": "2026-08-31T04:53:13.397Z",
   "started_at": null,
-  "closed_at": "2026-08-30T19:05:54.548Z",
+  "closed_at": "2026-08-31T04:53:13.397Z",
   "due_at": null,
   "defer_until": null,
   "parent": null,
@@ -37,7 +37,7 @@
     }
   ],
   "dependency_count": 1,
-  "dependent_count": 0,
+  "dependent_count": 2,
   "comments": [
     {
       "id": "comment-23330ee2-4b68-4a53-aec7-c19e98fa2d59",
@@ -47,6 +47,20 @@
       "created_at": "2026-08-30T19:03:34.548Z"
     },
     {
+      "id": "comment-75f94b87-50af-465b-8df1-628bebd1de5c",
+      "issue_id": "tk-dfr",
+      "author": "yuri",
+      "text": "milestone 1: socket client done \u2014 hubCmd one-shot client (hello handshake, cmd frame, cmdId correlation, timeout) + 9 contract tests vs in-process fake hub, all green. Hit Bun 1.3.14 bug (socket.data mutation in listen open() drops data events) \u2014 worked around with external Map in tests. Files so far: cli/src/{config,envelope,output,hub_socket,files,commands,bin}.ts",
+      "created_at": "2026-08-31T04:39:56.588Z"
+    },
+    {
+      "id": "comment-ad746a79-1938-48c5-963f-a3696b970b5d",
+      "issue_id": "tk-dfr",
+      "author": "yuri",
+      "text": "Completed: cli plumbing layer per docs/03-cli.md \u00a7bin.\n\nFiles: cli/src/{bin,commands,config,envelope,output,hub_socket,files}.ts + tests (bin/config/envelope/hub_socket .test.ts), cli/package.json (+commander 14), tsconfig.json (typecheck cli/web), bun.lock.\n\nDecisions:\n- commander exitOverride + configureOutput: help/version exit 0 without socket; usage failures emit one hub line (stderr) or one envelope, never commander's own text.\n- config resolution strict order: --config file > env (OMP_HUB_SOCK/OMP_HUB_MODEL/OMP_BIN/NO_COLOR) > ~/.hub/config.json (absent OK) > defaults; all fields validated, ConfigError = usage exit 1.\n- envelope.ts exhaustive ErrorCode\u2192exit map (1 usage/not_found/ambiguous/busy, 2 unavailable/protocol, 3 timeout); error envelopes go stdout.\n- hub_socket one-shot client: hello handshake, cmdId correlation, deadline\u2192timeout, wire codes mapped to lib HubError (busy \u2192 denied/exit 1 class).\n- bodies with later-task wire/format logic throw NotImplemented (usage class) \u2014 tree/config/envelope/exit layers exercised end to end via real subprocess.\n\nEvidence: 65 cli tests pass (config matrix, exit-code table vs real hub binary, 9 hubCmd contract tests vs in-process fake hub); workspace 157 pass, 0 fail; bunx tsc --noEmit clean. Committed b4fa03e on matchday/tk-dfr.\n\nNote: committed unsigned (--no-gpg-sign) \u2014 1Password op-ssh-sign helper failing repo-wide ('failed to fill whole buffer'); probed in scratch repo, same failure. Signing needs attention outside this task.\n\nAlso: git rm'd cli/src/commands/.gitkeep (dir now populated); render/ + screens/ .gitkeep left for later tasks. Left task OPEN for validator.",
+      "created_at": "2026-08-31T04:53:13.397Z"
+    },
+    {
       "id": "comment-febb1e3a-843a-4196-acb1-3cd282062829",
       "issue_id": "tk-dfr",
       "author": "yuri",
@@ -54,5 +68,5 @@
       "text": "VERIFIED PASS \u2014 validator: commander tree exact (bare + 12 subcommands, globals before/after subcommands, verified live via hub --json send); config strict first-hit-wins per docs/03 (file errors -> usage 1 with path named, absent config.json OK, defaults 10s/4820/omp); envelope exhaustive ErrorCode->exit switch (7 codes: 1x4, 2x2, 3x1), table test + compiler check, help/version exit 0 socketless; one envelope per machine invocation on stdout incl errors; imports = @yurifrl/hub barrel + node std + commander, zero @earendil, no cli<->web; scope correct (NotImplemented bodies sanctioned, socket client + config + envelope real, 9 contract tests vs fake hub: handshake, cmdId correlation, timeout, bad-version/malformed->exit-2). bun test cli/ 65 pass, workspace 157 pass 0 fail, tsc 0. Real binary smokes: --help 0, -V 0, badcmd --json 1 + usage envelope, watch --json --ndjson 1, log s-x 1 never 2, --config missing 1. Minor non-blocking: stale cli/src/commands/.gitkeep tracked (tk-tku can drop it); spawnModel default '' \u2014 tk-tku owns spawn semantics."
     }
   ],
-  "comment_count": 2
+  "comment_count": 4
 }
