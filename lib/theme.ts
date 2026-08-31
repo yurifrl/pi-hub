@@ -38,6 +38,15 @@ function hexToRgb(hex: string): [number, number, number] {
  */
 export const sessionHue = (sessionId: string): number => hashSessionId(sessionId) % 216;
 
+/** 6×6×6 cube index (16–231) → RGB triple (docs/03 §Session hue). */
+export const cubeIndexToRgb = (index: number): [number, number, number] => {
+  const i = index - 16;
+  const r = Math.floor(i / 36);
+  const g = Math.floor((i % 36) / 6);
+  const b = i % 6;
+  return [r === 0 ? 0 : 55 + r * 40, g === 0 ? 0 : 55 + g * 40, b === 0 ? 0 : 55 + b * 40];
+};
+
 /** Truecolor escape prefix for a theme token: `38;2;r;g;b` (no wrapper). */
 export const tokenColorCodes = (token: ThemeToken): string => {
   const [r, g, b] = TOKEN_RGB[token];
@@ -45,27 +54,12 @@ export const tokenColorCodes = (token: ThemeToken): string => {
 };
 
 /** Truecolor escape prefix for a session hue cube index. */
-export const hueColorCodes = (sessionId: string): string => {
-  const i = sessionHue(sessionId);
-  const r = Math.floor(i / 36);
-  const g = Math.floor((i % 36) / 6);
-  const b = i % 6;
-  const sr = r === 0 ? 0 : 55 + r * 40;
-  const sg = g === 0 ? 0 : 55 + g * 40;
-  const sb = b === 0 ? 0 : 55 + b * 40;
-  return `38;2;${sr};${sg};${sb}`;
-};
+export const hueColorCodes = (sessionId: string): string => cubeIndexToCodes(16 + sessionHue(sessionId));
 
 /** 6×6×6 cube index (16–231) → truecolor codes. */
 export const cubeIndexToCodes = (index: number): string => {
-  const i = index - 16;
-  const r = Math.floor(i / 36);
-  const g = Math.floor((i % 36) / 6);
-  const b = i % 6;
-  const sr = r === 0 ? 0 : 55 + r * 40;
-  const sg = g === 0 ? 0 : 55 + g * 40;
-  const sb = b === 0 ? 0 : 55 + b * 40;
-  return `38;2;${sr};${sg};${sb}`;
+  const [r, g, b] = cubeIndexToRgb(index);
+  return `38;2;${r};${g};${b}`;
 };
 
 /**

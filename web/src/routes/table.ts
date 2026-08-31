@@ -3,7 +3,7 @@
 // surface, and the /stream SSE endpoint contract.
 // Pure routing over injected state + handlers; no I/O here.
 
-import type { HubError } from "@yurifrl/hub";
+import type { HubError, SummaryLine } from "@yurifrl/hub";
 import { CSP, agentPage, archivedSessionPage, archivePage, consolePage, sessionNotFoundPage, sessionPage } from "../html";
 import type { HubWebTheme, SseConn, SnapshotPayload } from "../types";
 
@@ -12,6 +12,8 @@ import type { HubWebTheme, SseConn, SnapshotPayload } from "../types";
 export type RouteHandlers = {
   /** current StatusFile for HTML renders and /api/status */
   snapshot(): Promise<SnapshotPayload>;
+  /** tail of summaries.jsonl, newest first (summary rail) */
+  summaries(): Promise<SummaryLine[]>;
   /** POST /api/answer {itemId, text} — deliver text to session + resolve item */
   answer(itemId: string, text: string): Promise<HubError | null>;
   /** POST /api/assign {sessionId, task} */
@@ -48,25 +50,38 @@ const ok = (): Response => json({ ok: true }, 200);
 const errorJson = (err: HubError): Response =>
   json({ error: err.message }, err.code === "unknown-session" ? 404 : err.code === "denied" ? 409 : 502);
 
-/** Stub /stream: SSE headers + an initial snapshot event (docs/04 §SSE contract). */
+/** Stub /stream: SSE headers + an initial snapshot event + delta fan-out
+ * (docs/04 §SSE contract). `conn.push` is the write side the server's bus
+ * subscription calls; payloads arrive already shaped per the contract. */
 const streamResponse = (snapshot: SnapshotPayload, conns: Set<SseConn>): Response => {
   const encoder = new TextEncoder();
   let closed = false;
-  let closeController: (() => void) | null = null;
+  let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
+  let seq = 0;
   const conn: SseConn = {
     close: () => {
       if (closed) return;
       closed = true;
-      closeController?.();
+      try {
+        controllerRef?.close();
+      } catch {
+        // already closed
+      }
+    },
+    push: (event, data) => {
+      if (closed || !controllerRef) return;
+      try {
+        controllerRef.enqueue(encoder.encode(`id: ${seq++}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      } catch {
+        closed = true;
+        conns.delete(conn);
+      }
     },
   };
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      const send = (event: string, data: unknown, id: string): void => {
-        controller.enqueue(encoder.encode(`id: ${id}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-      };
-      send("snapshot", snapshot, "0");
-      closeController = () => controller.close();
+      controllerRef = controller;
+      conn.push!("snapshot", snapshot);
       conns.add(conn);
     },
     cancel() {
@@ -107,7 +122,7 @@ export const route = async (
   // HTML routes
   if (method === "GET") {
     if (pathname === "/") {
-      return html(consolePage(await h.snapshot(), env.theme), 200);
+      return html(consolePage(await h.snapshot(), env.theme, await h.summaries()), 200);
     }
     const session = pathname.match(/^\/session\/([^/]+)$/);
     if (session) {

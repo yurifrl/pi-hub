@@ -13,6 +13,7 @@ import type {
   LogEntry,
   SessionRecord,
   StatusStore,
+  SummaryLine,
   SummaryStore,
   ThemeToken,
 } from "@yurifrl/hub";
@@ -31,6 +32,8 @@ export interface SessionDigest {
 export interface SnapshotPayload {
   /** status.json schema version */
   v: number;
+  /** true when the hub agent is live (digest or agentSession present) — drives the agent-off fallback */
+  agentOn: boolean;
   /** orientation line: hub-agent digest, or synthesized counts */
   digest: string;
   /** open attention items */
@@ -50,10 +53,17 @@ export type HubWebLogs = {
 /** Theme token overrides; defaults to lib/theme.ts. */
 export type HubWebTheme = Record<ThemeToken, string>;
 
-/** One open SSE connection the server must be able to close on stop(). */
+/** One open SSE connection the server must be able to close on stop().
+ * `push` is the delta write side — the server's bus subscription calls it with
+ * payloads shaped per the docs/04 §SSE contract (event name + JSON payload). */
 export type SseConn = {
   close(): void;
+  /** enqueue one delta event; no-op after close or client disconnect */
+  push?(event: string, data: unknown): void;
 };
+
+/** Latest summaries.jsonl lines for the summary rail (docs/04 §Main page 6). */
+export type SummaryFeed = SummaryLine[];
 
 /** Deps shape (docs/04-web.md §Server type sketch). */
 export type HubWebDeps = {

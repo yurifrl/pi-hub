@@ -17,11 +17,11 @@ export const startHubWeb = async (deps: HubWebDeps): Promise<{ stop(): Promise<v
   const theme = resolveTheme(deps.theme);
   const sseConns = new Set<SseConn>();
 
-  // Lifecycle: subscribe to the bus on start; unsubscribe on stop(). The web
-  // surface never publishes state (docs/01 import matrix; docs/04 §Server).
-  const unsubscribe = deps.bus.subscribe((_evt) => {
-    // Delta fan-out over /stream (attention/log/summary/phase events) is
-    // tk-szb's endpoint contract; this task ships the snapshot-only stub.
+  // Lifecycle + delta fan-out: subscribe to the bus on start, shape payloads
+  // per the /stream contract (docs/04 §SSE contract), push to every open
+  // connection. The web surface never publishes state (docs/01 import matrix).
+  const unsubscribe = deps.bus.subscribe((evt) => {
+    for (const conn of sseConns) conn.push?.(evt.topic, evt.payload);
   });
 
   const handlers: RouteHandlers = {
@@ -29,6 +29,12 @@ export const startHubWeb = async (deps: HubWebDeps): Promise<{ stop(): Promise<v
       const result = await deps.stores.status.read();
       if (!result.ok) throw new Error(result.error.message);
       return buildSnapshot(result.value);
+    },
+    summaries: async () => {
+      // tail summaries.jsonl, newest first for the rail (docs/04 §Main page 6)
+      const result = await deps.stores.summaries.tail(30);
+      if (!result.ok) throw new Error(result.error.message);
+      return result.value.slice().reverse();
     },
     answer: async (itemId, text) => {
       const reply = await deps.commands.dispatch({ cmdId: crypto.randomUUID(), op: "answer", args: { id: itemId, text }, by: "web" });
