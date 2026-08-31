@@ -4,14 +4,14 @@
   "id": "tk-uhp",
   "title": "lib: jsonl store append-only writer with atomic tmp+rename for status.json",
   "description": "",
-  "status": "open",
+  "status": "in-progress",
   "priority": 2,
   "issue_type": "task",
   "owner": null,
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:14.823Z",
-  "updated_at": "2026-08-30T19:06:23.958Z",
+  "updated_at": "2026-08-31T04:26:13.149Z",
   "started_at": null,
   "closed_at": null,
   "due_at": null,
@@ -38,6 +38,14 @@
   ],
   "dependency_count": 1,
   "dependent_count": 1,
-  "comments": [],
-  "comment_count": 0
+  "comments": [
+    {
+      "id": "comment-12e499e2-96d8-4de3-8404-01fcd5d4c3f7",
+      "issue_id": "tk-uhp",
+      "author": "yuri",
+      "text": "Store layer implemented on matchday/tk-uhp (commit 9f896af).\n\njson_store.ts — StatusStore over status.json:\n- atomic rewrite: serialize (version pinned as first meta field) -> status.json.tmp -> fsync -> rename(2); readers see previous or next complete object only\n- corrupt/missing: corrupt file = error Result, never silent reset; missing file seeds skeleton on update() (boot path); read() of missing file = unavailable-hub error\n- concurrent in-process update() calls serialized on a promise chain (flock is host responsibility); throwing mutate caught as denied error, chain survives\n- removeStaleTmp: sweeps crashed writer's status.json.tmp (hub-start hook)\n- unknown fields tolerated at every level and preserved across updates\n\njsonl_store.ts — SummaryStore port + log half:\n- append = single write(2) at O_APPEND per line, file+parent auto-created\n- torn tail (no trailing newline) discarded on read; invalid middle lines skipped; files never rewritten/compacted\n- 2KB text truncation on write (truncateLogText, writer duty; reader tolerates longer)\n- log lines use docs/02 vocabulary prompt|tool|result|think|message|system, t = UTC string on disk; session_start system line carries attached flag + kind in meta\n- tail(n, filter)/tailLog/replayLog narrow before slicing; summaries filter via domain matchesSummary\n\nlib/index.test.ts: node/bun std imports allowed at adapter edge only (docs/01 import matrix) — same edit as tk-wmx for clean merge.\n\nVerification: bun test lib/ = 123 pass (92 pre-existing + 31 new), 0 fail. bunx tsc --noEmit clean. Tests run against mkdtemp dirs, never real ~/.hub. Public surface exactly the port shapes + StoredLogEntry/LogFilter/LogStore/ truncateLogText/removeStaleTmp helpers in adapters only.",
+      "created_at": "2026-08-31T04:26:13.149Z"
+    }
+  ],
+  "comment_count": 1
 }
