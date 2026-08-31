@@ -276,8 +276,12 @@ describe("createHubCommands.hubStart — socket bound + brain spawned via inject
         await local.start();
         const client = await connectClient(env.sock);
         client.report("session_start", { sessionId: "s-abc", attached: false, cwd: "/tmp/x" });
-        // frame pump is synchronous on write; give the pipeline a tick
-        await Bun.sleep(5);
+        // poll for the roster row — fixed sleep raced under load
+        for (let i = 0; i < 100; i++) {
+            const s = await local.readStatus();
+            if (s.ok && s.value.sessions["s-abc"]) break;
+            await Bun.sleep(2);
+        }
         const snap = await local.readStatus();
         expect(snap.ok).toBe(true);
         if (snap.ok) expect(snap.value.sessions["s-abc"]).toBeDefined();
@@ -377,7 +381,12 @@ describe("createHubCommands.hubStop — socket closed + children terminated + se
         // a peer announces itself, then the hub stops
         const client = await connectClient(env.sock);
         client.report("session_start", { sessionId: "s-peer", attached: false, cwd: "/tmp/x" });
-        await Bun.sleep(5);
+        // poll for the roster row — fixed sleep raced under load
+        for (let i = 0; i < 100; i++) {
+            const s = await local.readStatus();
+            if (s.ok && s.value.sessions["s-peer"]) break;
+            await Bun.sleep(2);
+        }
         client.close();
         await commands.hubStop();
 
@@ -622,7 +631,13 @@ describe("reportToRaw + widget key", () => {
         await local.start();
         const client = await connectClient(env.sock);
         client.report("session_start", { sessionId: "s-titled", attached: false, cwd: "/tmp/x", title: "deploy canary", model: "m-1" });
-        await Bun.sleep(5);
+        // poll instead of a fixed sleep: the report pipeline is async and the
+        // 5ms sleep raced under load (flaked in full-suite runs)
+        for (let i = 0; i < 100; i++) {
+            const snap = await local.readStatus();
+            if (snap.ok && snap.value.sessions["s-titled"]) break;
+            await Bun.sleep(2);
+        }
         const snap = await local.readStatus();
         expect(snap.ok).toBe(true);
         if (snap.ok) {

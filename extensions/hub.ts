@@ -13,6 +13,7 @@ import { resolveHubEnv } from "./hub_env";
 import type { HubEnv } from "./hub_env";
 import { createHubLocal } from "./hub_local";
 import type { HubLocal } from "./hub_local";
+import { createHubTools } from "./hub_tools";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentRuntime } from "@yurifrl/hub";
 
@@ -138,6 +139,13 @@ export default function hub(pi: ExtensionAPI): void {
         agentName: null,
     };
     const commands = createHubCommands(env, state);
+
+    // ---- the nine hub_* tools (docs/05 §Tools) — registered in every
+    // non-brain session; each call resolves its route at call time:
+    // hub-local via state, peer relay over hub.sock via env.sock. ----
+    for (const tool of createHubTools({ env, state })) {
+        pi.registerTool(tool);
+    }
 
     // Widget slot claimed up front (docs/05 §Entry step 1); the RENDER is
     // tk-z9a's — it consumes the subscription surface registered below and
