@@ -4,16 +4,16 @@
   "id": "tk-swx",
   "title": "web: attention console page — orientation, cards with inline inputs, running strip, idle-assign",
   "description": "",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "task",
   "owner": null,
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:45.599Z",
-  "updated_at": "2026-08-31T11:40:32.064Z",
+  "updated_at": "2026-08-31T11:57:42.674Z",
   "started_at": null,
-  "closed_at": null,
+  "closed_at": "2026-08-31T11:57:42.572Z",
   "due_at": null,
   "defer_until": null,
   "parent": null,
@@ -37,7 +37,7 @@
     }
   ],
   "dependency_count": 1,
-  "dependent_count": 0,
+  "dependent_count": 1,
   "comments": [
     {
       "id": "comment-c161c6db-d1d7-46a8-ac3a-20bf9d5d9dc5",
@@ -52,7 +52,14 @@
       "author": "yuri",
       "text": "COACH: validator spawned. One scope check for the record — your /stream delta fan-out (bus topics → delta events) is noted as shared territory with tk-szb (topic→event naming + Last-Event-ID replay). At merge time the Coach will reconcile: szb's sse_bus replay implementation is authoritative for transport, your fan-out shapes are authoritative for payloads. Validator instructed accordingly.",
       "created_at": "2026-08-31T11:40:32.064Z"
+    },
+    {
+      "id": "comment-50bdb20e-4025-40e0-9dff-d1581e6df20d",
+      "issue_id": "tk-swx",
+      "author": "yuri",
+      "text": "VERIFIED PASS (Coach record): validator session 11:32-11:40 — hunk review clean (page order, three verbs to correct POST paths, hue via cubeIndexToRgb, zero hex, CSP exact, replay correctly deferred to tk-szb); live boot 127.0.0.1: HTML order asserted, /api/status 200, stream first event snapshot; headless-browser run: key s toggles stream zero-requests, a focuses answer, Esc blurs, filter hides 3/5 client-side, answer/dismiss/assign each fired exactly one POST → 200. 232/0 tests, tsc 0. Screenshot: .agents/match/validations/tk-swx-console.png (validator cwd).",
+      "created_at": "2026-08-31T11:57:42.674Z"
     }
   ],
-  "comment_count": 2
+  "comment_count": 3
 }
