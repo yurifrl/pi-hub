@@ -2,11 +2,10 @@
 // live here; bin.ts composes and dispatches, contains no domain logic).
 //
 // Each body receives a typed context (socket client + file reader + io +
-// config + output policy) and is wired into the tree. Mutations and archive
-// listing are real implementations (tk-tku); the bare board is real
-// (tk-avx, screens/board.ts); the remaining read-only views belong to later
-// tasks and throw NotImplemented — a typed usage-class error bin maps to the
-// standard usage envelope.
+// config + output policy) and is wired into the tree. Every subcommand has a
+// real implementation (tk-tku mutations, tk-avx board, tk-2xf watch, and the
+// agent/web wrappers). NotImplemented remains as the typed shape bin maps to
+// a usage envelope if a future stub ever appears.
 
 import type { HubCliConfig } from "./config";
 import type { HubFiles } from "./files";
@@ -23,6 +22,8 @@ import { cmdArchiveClose, cmdArchiveList } from "./cmd_archive";
 import { cmdLog } from "./cmd_log";
 import { cmdSummaries } from "./cmd_summaries";
 import { cmdWatch } from "./cmd_watch";
+import { cmdAgent } from "./cmd_agent";
+import { cmdWeb } from "./cmd_web";
 
 /** Commander grammar keeps `[id] <text...>` unsplit — the body owns the split. */
 export type MixedTail = { head: string | undefined; tail: string[] };
@@ -44,6 +45,7 @@ export type CmdFn = (
   op: string,
   args: Record<string, unknown>,
   timeoutMs?: number,
+  by?: "cli" | "web" | "plugin" | "agent",
 ) => Promise<{ result: unknown } | { error: { code: string; message: string } }>;
 
 /** Everything a command body may touch — built once in bin.ts (§bin composition root). */
@@ -114,10 +116,10 @@ export const archiveCloseBody: CommandBody = async (ctx, id): Promise<void> => {
   await cmdArchiveClose(ctx, id as string);
 };
 
-export const agentBody: CommandBody = () => {
-  throw new NotImplemented("hub agent", "tk-tku");
+export const agentBody: CommandBody = async (ctx, opts): Promise<void> => {
+  await cmdAgent(ctx, (opts as { surface?: string } | undefined)?.surface);
 };
 
-export const webBody: CommandBody = () => {
-  throw new NotImplemented("hub web", "tk-tku");
+export const webBody: CommandBody = async (ctx, opts): Promise<void> => {
+  await cmdWeb(ctx, (opts as { port?: number } | undefined)?.port);
 };

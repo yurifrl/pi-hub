@@ -48,6 +48,11 @@ export type HubCoreDeps = {
      * inbound `deliver` handler is registered (tk-epx); undefined until then
      * means "no reporter plumbed yet" and delivers fail unknown-session */
     deliverTo?: (sessionId: string, text: string) => Result<void, HubError>;
+    /** the supervised agent spawn (the `agent` op's body): the watcher's
+     * spawnAgent, injected by hub_local — docs/05 §Agent spawn, one path
+     * for CLI/web/plugin. Undefined → the op replies denied (hub built
+     * without a watcher, tests). */
+    spawnAgent?: () => Promise<Result<{ name: string }, HubError>>;
 };
 
 /** The hub-side runtime: event intake, command dispatch, child lifecycle. */
@@ -310,6 +315,20 @@ export const createHubCore = (deps: HubCoreDeps, config: HubCoreConfig = {}): Hu
                 deps.bus.publish({ topic: "status", payload: { kind: "assign", sessionId: target, task } });
                 return ok({ item: undefined });
             }
+            case "agent": {
+                // docs/05 §Agent spawn: the one spawn every entry point
+                // resolves to — the watcher's supervised path (adopt when a
+                // child is already live; env OMP_HUB_AGENT=1; kind:"agent").
+                // surface: <id> is the CLI's concern (the surface.json write
+                // contract is docs/06); the hub only spawns.
+                if (!deps.spawnAgent) {
+                    return { ok: false, error: hubError("denied", "agent spawn not available (no watcher wired)", { retryable: false }) };
+                }
+                const res = await deps.spawnAgent();
+                if (!res.ok) return res;
+                // docs/02 §ops table: reply { started: true, name }
+                return ok({ started: true, name: res.value.name });
+            }
             case "tool":
             case "archive":
             case "logTail":
@@ -322,7 +341,7 @@ export const createHubCore = (deps: HubCoreDeps, config: HubCoreConfig = {}): Hu
 
     const surface = {
         dispatch,
-        ops: (): OpName[] => ["list", "send", "tool", "spawn", "kill", "archive", "attention", "answer", "assign", "logTail", "summaries"],
+        ops: (): OpName[] => ["list", "send", "tool", "spawn", "kill", "archive", "attention", "answer", "assign", "logTail", "summaries", "agent"],
     };
 
     return {

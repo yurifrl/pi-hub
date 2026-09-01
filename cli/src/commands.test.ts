@@ -5,7 +5,7 @@
 // without TTY.
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "./bin";
@@ -457,4 +457,140 @@ describe("archive LIST with empty archive dir", () => {
     expect(jsonEnv(out).type).toBe("snapshot");
     expect(jsonEnv(out).data.entries).toEqual([]);
   });
+});
+
+// ---- agent -----------------------------------------------------------------
+
+describe("agent", () => {
+  it("frame agent {}; envelope {started, name, surface:'watcher'}; no surface.json for default", async () => {
+    const frames: Record<string, unknown>[] = [];
+    const cfg = startHub({
+      onCmd: (f) => {
+        frames.push(f);
+        return f.op === "agent" ? { started: true, name: "watcher-1" } : listResult();
+      },
+    });
+    const { code, out } = await capture(["--config", cfg, "--json", "agent"]);
+    expect(code).toBe(0);
+    expect(jsonEnv(out).data).toEqual({ started: true, name: "watcher-1", surface: "watcher" });
+    const cmd = frames.find((f) => f.op === "agent");
+    expect(cmd?.args).toEqual({});
+    expect(existsSync(join(dir, "agents", "watcher-1", "surface.json"))).toBe(false);
+  });
+
+  it("--surface pending writes atomic surface.json with revision 1 before spawn reply", async () => {
+    const frames: Record<string, unknown>[] = [];
+    const cfg = startHub({
+      onCmd: (f) => {
+        frames.push(f);
+        return f.op === "agent" ? { started: true, name: "watcher-2" } : listResult();
+      },
+    });
+    const { code } = await capture(["--config", cfg, "--json", "agent", "--surface", "pending"]);
+    expect(code).toBe(0);
+    const file = join(dir, "agents", "watcher-2", "surface.json");
+    expect(existsSync(file)).toBe(true);
+    expect(existsSync(`${file}.tmp-${process.pid}`)).toBe(false); // tmp renamed away
+    const seed = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    expect(seed.agent).toBe("watcher-2");
+    expect(seed.surface).toBe("pending");
+    expect(seed.revision).toBe(1);
+    expect(typeof seed.updatedAt).toBe("string");
+  });
+
+  it("unknown surface → usage 1, no cmd frame, no file write", async () => {
+    const frames: Record<string, unknown>[] = [];
+    const cfg = startHub({
+      onCmd: (f) => {
+        frames.push(f);
+        return listResult();
+      },
+    });
+    const { code, out } = await capture(["--config", cfg, "--json", "agent", "--surface", "bogus"]);
+    expect(code).toBe(1);
+    expect(jsonEnv(out).error.code).toBe("usage");
+    expect(frames.find((f) => f.op === "agent")).toBeUndefined();
+  });
+
+  it("hub reply name wins over WATCHER_DEFAULTS in envelope", async () => {
+    const cfg = startHub({ onCmd: () => ({ started: true, name: "hub-named" }) });
+    const { code, out } = await capture(["--config", cfg, "--json", "agent"]);
+    expect(code).toBe(0);
+    expect(jsonEnv(out).data.name).toBe("hub-named");
+  });
+});
+
+// ---- web -------------------------------------------------------------------
+
+describe("web", () => {
+  it("--json → usage 1 (a server has no snapshot semantics)", async () => {
+    const cfg = join(dir, "hub.config.json");
+    writeFileSync(cfg, JSON.stringify({ dataRoot: dir }));
+    const { code, out } = await capture(["--config", cfg, "--json", "web"]);
+    expect(code).toBe(1);
+    expect(jsonEnv(out).error.code).toBe("usage");
+    expect(jsonEnv(out).error.message).toMatch(/snapshot semantics/);
+  });
+
+  it("serves the console on a free port, / returns HTML, snapshot served from disk stores", async () => {
+    // status.json + summaries.jsonl on disk — web reads through injected
+    // stores, no hub needed
+    const sdir = join(dir, "sessions");
+    mkdirSync(sdir, { recursive: true });
+    // version-first status.json (docs/02 §status.json meta block) — the
+    // json_store adapter validates on read
+    writeFileSync(
+      join(dir, "status.json"),
+      JSON.stringify({
+        version: 1,
+        startedAt: "2026-08-31T00:00:00.000Z",
+        pid: 1,
+        nextAttentionId: 1,
+        sessions: {
+          "s-web000000001": {
+            sessionId: "s-web000000001",
+            status: "open",
+            kind: "peer",
+            cwd: dir,
+            title: "t",
+            name: "websession",
+            phase: "working",
+            startedAt: "2026-08-31T00:00:00.000Z",
+          },
+        },
+        attention: [],
+      }),
+    );
+    const cfg = join(dir, "hub.config.json");
+    writeFileSync(cfg, JSON.stringify({ dataRoot: dir, webPort: 4891 }));
+    const { code, out } = await capture(["--config", cfg, "--ndjson", "web"]);
+    expect(code).toBe(1); // ndjson also machine → usage 1
+    expect(jsonEnv(out).error.code).toBe("usage");
+
+    const proc = Bun.spawn(["bun", "run", join(import.meta.dir, "bin.ts"), "--config", cfg, "web"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    try {
+      const url = await new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("web never printed its URL")), 5000);
+        void (async () => {
+          const reader = proc.stdout.getReader();
+          const { value } = await reader.read();
+          clearTimeout(timer);
+          resolve(new TextDecoder().decode(value).trim());
+        })();
+      });
+      expect(url).toMatch(/^http:\/\/127\.0\.0\.1:4891$/);
+      const page = await fetch(url);
+      expect(page.status).toBe(200);
+      expect(await page.text()).toMatch(/<html/i);
+      const snap = await fetch(`${url}/api/status`);
+      expect(snap.status).toBe(200);
+      expect(((await snap.json()) as { sessions: unknown[] }).sessions.length).toBe(1);
+    } finally {
+      proc.kill();
+      await proc.exited;
+    }
+  }, 15000);
 });

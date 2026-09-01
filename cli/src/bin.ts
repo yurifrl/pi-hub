@@ -205,8 +205,8 @@ export const run = async (argv: string[]): Promise<number> => {
     policy,
     files: makeFileReader(config),
     io: processIo(),
-    cmd: async (op, args, timeoutMs) => {
-      const out = await hubCmd(config.sock, op, args, timeoutMs ?? config.replyTimeoutMs);
+    cmd: async (op, args, timeoutMs, by) => {
+      const out = await hubCmd(config.sock, op, args, timeoutMs ?? config.replyTimeoutMs, by);
       return "result" in out ? out : { error: { code: out.error.code, message: out.error.message } };
     },
   };

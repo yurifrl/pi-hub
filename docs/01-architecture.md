@@ -50,7 +50,13 @@ Rules the matrix encodes:
 
 - lib imports nothing from omp or `@earendil-works/*`. The extension entry is the only consumer of host types.
 - `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` are optional peerDependencies of the root package only, so the plugin compiles against whatever the host ships and renders through the host's TUI. lib, cli, and web never reference them.
-- extensions import lib; cli and web import lib only — never each other, never the extension, never omp types directly.
+- extensions import lib; cli and web import lib only — never each other,
+  never the extension, never omp types directly. One sanctioned exception:
+  `cli/src/cmd_web.ts` statically imports `@yurifrl/hub-web` (workspace dep of
+  the cli manifest) because docs/03 names `hub web` as the server's host and
+  no middle package exists — the import is composition at the binary edge
+  (adapters + startHubWeb), not business logic flowing cli→web; web still
+  imports nothing from cli.
 - Any deep import across a package boundary (`@yurifrl/hub/domain/session`) is a defect; only barrels and documented adapter subpaths cross.
 
 **DRY rules.** Every type is defined exactly once in `lib/domain/` — surfaces are renderer plugins over it, never re-declare it. Theme tokens are defined once in `lib/theme.ts` and consumed by every surface:

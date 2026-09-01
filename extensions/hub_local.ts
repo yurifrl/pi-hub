@@ -159,6 +159,11 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
             clock,
             selfSessionId: deps.selfSessionId,
             deliverTo: (sessionId, text) => socket?.deliverTo(sessionId, text) ?? { ok: false, error: { code: "unknown-session", message: "hub not serving", retryable: false } },
+            // the `agent` op's body: the watcher's supervised spawn (docs/05
+            // §Agent spawn). Deferred — the watcher exists only after start().
+            spawnAgent: () =>
+                watcher?.spawnAgent() ??
+                Promise.resolve({ ok: false, error: { code: "unavailable-hub" as const, message: "hub not serving", retryable: false } }),
         },
         { ...(env.model !== undefined ? { model: env.model } : {}) },
     );

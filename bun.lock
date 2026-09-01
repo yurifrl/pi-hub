@@ -25,6 +25,7 @@
         "hub": "./src/bin.ts",
       },
       "dependencies": {
+        "@yurifrl/hub-web": "workspace:*",
         "commander": "14.0.2",
       },
     },

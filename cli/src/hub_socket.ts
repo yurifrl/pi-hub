@@ -11,13 +11,15 @@ import { hubError } from "@yurifrl/hub";
 
 export const PROTOCOL_VERSION = 1 as const;
 
-/** The wire frame written to the socket: `{ v, ch:"cmd", cmdId, op, args }`. */
+/** The wire frame written to the socket: `{ v, ch:"cmd", cmdId, op, args, by? }`
+ * — `by` optional caller class (docs/02 §cmd frames), default cli. */
 export type CmdFrame = {
   v: number;
   ch: "cmd";
   cmdId: string;
   op: string;
   args: Record<string, unknown>;
+  by?: string;
 };
 
 /** Hub hello reply: `{ v, ch:"hello", hub: { version, startedAt } }`. */
@@ -76,6 +78,7 @@ export const hubCmd = async (
   op: string,
   args: Record<string, unknown>,
   timeoutMs: number,
+  by?: "cli" | "web" | "plugin" | "agent",
 ): Promise<{ result: unknown } | { error: HubError }> => {
   const myCmdId = newCmdId();
   return await new Promise<{ result: unknown } | { error: HubError }>((resolve) => {
@@ -101,7 +104,10 @@ export const hubCmd = async (
     // ---- connect ----
     // First frame from any client is hello (docs/02 §Handshake).
     socket.once("connect", () => {
-      send({ v: PROTOCOL_VERSION, ch: "hello", client: "cli", subscribe: false });
+      // hello identity: docs/02 §Handshake client ids; `by` param lets a host
+      // (web composition) claim its own caller class so the hub's attention
+      // resolution attributes the reply envelope correctly
+      send({ v: PROTOCOL_VERSION, ch: "hello", client: by ?? "cli", subscribe: false });
     });
     // connect(path) already starts connecting; attaching the error handler
     // before any await keeps the failure synchronous to this closure.
@@ -136,7 +142,7 @@ export const hubCmd = async (
               return;
             }
             helloDone = true;
-            send({ v: PROTOCOL_VERSION, ch: "cmd", cmdId: myCmdId, op, args } satisfies CmdFrame);
+            send({ v: PROTOCOL_VERSION, ch: "cmd", cmdId: myCmdId, op, args, ...(by !== undefined && by !== "cli" ? { by } : {}) } satisfies CmdFrame);
             continue;
           }
           if (f.ch === "error") {

@@ -11,6 +11,7 @@
     "check": "bun build --no-bundle ./src/bin.ts --outfile=/tmp/pi-hub-cli-build.js"
   },
   "dependencies": {
+    "@yurifrl/hub-web": "workspace:*",
     "commander": "14.0.2"
   }
 }

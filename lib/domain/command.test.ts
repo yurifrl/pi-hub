@@ -24,7 +24,7 @@ describe("hubError", () => {
 });
 
 describe("op registry", () => {
-  it("exposes the eleven ops of the vocabulary", () => {
+  it("exposes the twelve ops of the vocabulary", () => {
     expect(OP_NAMES).toEqual([
       "list",
       "attention",
@@ -37,6 +37,7 @@ describe("op registry", () => {
       "archive",
       "logTail",
       "summaries",
+      "agent",
     ]);
   });
 });

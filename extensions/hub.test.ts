@@ -604,6 +604,45 @@ describe("hub_env — resolution happens at the extension boundary", () => {
 });
 
 // =====================================================================
+// 5b. agent op over the socket (tk-hai acceptance: cmd frame agent {} →
+//     the watcher's supervised spawn path → reply { started, name })
+// =====================================================================
+
+describe("agent op over the unix socket", () => {
+    it("cmd frame agent {} routes through the watcher's supervised path; second call adopts (no double spawn)", async () => {
+        const { env } = await makeEnv();
+        const rt = makeRuntime(); // brain — must see only its own spawn
+        const art = makeRuntime(); // acp (agent) runtime — the agent op path
+        const local = createHubLocal({
+            env,
+            selfSessionId: () => "s-self",
+            // REAL watcher: adopt semantics (childName !== null) live in
+            // startWatcher, not in the op — a fake here would count two spawns
+            overrides: { runtime: rt.runtime, agentRuntime: art.runtime },
+        });
+        const started = await local.start();
+        expect(started.ok).toBe(true);
+
+        const client = await connectClient(env.sock);
+        const reply = await client.cmd("agent");
+        expect(reply.ok).toBe(true);
+        if (reply.ok) {
+            expect(reply.value).toMatchObject({ started: true, name: "hub-watcher" });
+        }
+        expect(art.spawns.length).toBe(1); // supervised path, not a raw spawn
+        expect(rt.spawns.length).toBe(1); // brain untouched
+
+        // second call adopts: still one spawn (docs/05 §Agent spawn)
+        const again = await client.cmd("agent");
+        expect(again.ok).toBe(true);
+        expect(art.spawns.length).toBe(1);
+
+        client.close();
+        await local.stop();
+    });
+});
+
+// =====================================================================
 // 6. reporter frame translation + widget key contract
 // =====================================================================
 
