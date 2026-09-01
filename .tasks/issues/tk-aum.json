@@ -4,16 +4,16 @@
   "id": "tk-aum",
   "title": "cli: render stack — screen buffer, ANSI theme mapping, session-hue, raw keypress, TTY degrade",
   "description": "",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "task",
   "owner": null,
   "assignee": null,
   "created_by": "yuri",
   "created_at": "2026-08-30T18:55:27.911Z",
-  "updated_at": "2026-08-30T19:05:54.934Z",
+  "updated_at": "2026-09-01T01:11:57.116Z",
   "started_at": null,
-  "closed_at": null,
+  "closed_at": "2026-09-01T01:11:57.116Z",
   "due_at": null,
   "defer_until": null,
   "parent": null,
@@ -37,7 +37,7 @@
     }
   ],
   "dependency_count": 1,
-  "dependent_count": 0,
+  "dependent_count": 2,
   "comments": [
     {
       "id": "comment-3afd5f19-1217-49c2-895b-ba87c3c39d39",
