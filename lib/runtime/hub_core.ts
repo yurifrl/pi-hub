@@ -235,6 +235,24 @@ export const createHubCore = (deps: HubCoreDeps, config: HubCoreConfig = {}): Hu
             }
         }
 
+        // close-driven resolution (docs/02 §archive resolutions): the
+        // session's still-open attention items resolve with the close so no
+        // zombie item points at a dropped row; the re-read below then
+        // harvests them into the record. Failed step before the write →
+        // re-open, per the durability rule.
+        const pre = await deps.status.read();
+        if (!pre.ok) return { ok: false, error: pre.error };
+        const stillOpen = pre.value.attention.filter((i) => i.sessionId === id && i.resolvedAt === undefined);
+        const resolvedBy: Caller = closedBy === "cli" ? "cli" : "plugin";
+        for (const item of stillOpen) {
+            const resolved = await deps.attention.resolve(item.id, undefined, resolvedBy);
+            if (!resolved.ok) {
+                const reverted = await reopen(id);
+                if (!reverted.ok) return reverted;
+                return resolved;
+            }
+        }
+
         // re-read after the farewell: the close may flush one last event
         const after = await deps.status.read();
         if (!after.ok) return { ok: false, error: after.error };

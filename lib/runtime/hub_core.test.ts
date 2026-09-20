@@ -76,9 +76,12 @@ const makeCore = (opts: { selfSessionId?: string; deliverTo?: (sessionId: string
                 text: c.text,
                 createdAt: "2026-01-01T00:00:00.000Z",
             }),
-        resolve: async (id) => {
+        resolve: async (id, answer) => {
             const item = statusFile.attention.find((i) => i.id === id);
-            return item ? ok(item) : { ok: false, error: { code: "unknown-session" as const, message: "no item", retryable: false } };
+            if (!item) return { ok: false, error: { code: "unknown-session" as const, message: "no item", retryable: false } };
+            const done: AttentionItem = { ...item, resolvedAt: "1970-01-01T00:16:40.000Z", ...(answer !== undefined ? { answer } : {}) };
+            statusFile.attention = statusFile.attention.map((i) => (i.id === id ? done : i));
+            return ok(done);
         },
     };
     const clock: Clock = { now: () => 1_000_000 };
@@ -268,5 +271,30 @@ describe("hub_core — reapStale (docs/02 §hub-restart)", () => {
         if (res.ok) expect(res.value).toBe(0);
         expect(statusFile.sessions["s-stale"]).toBeDefined();
         expect(archiveRecords).toHaveLength(0);
+    });
+
+    it("reaping a stale session resolves its open attention items — no zombie items, resolution rides the record", async () => {
+        const { core, statusFile, archiveRecords } = makeCore({ restartGraceMs: 60_000 });
+        await seedSession(core, "s-stale");
+        statusFile.sessions["s-stale"]!.lastActivity = "1970-01-01T00:00:00.000Z";
+        statusFile.attention.push({
+            id: "att-1",
+            sessionId: "s-stale",
+            kind: "idle",
+            text: "idle past timeout; nothing queued",
+            createdAt: "1970-01-01T00:16:39.000Z",
+        });
+
+        const res = await core.reapStale();
+        expect(res.ok).toBe(true);
+        if (res.ok) expect(res.value).toBe(1);
+
+        // the item is resolved, not a zombie pointing at a dropped row
+        expect(statusFile.attention).toEqual([expect.objectContaining({ id: "att-1", resolvedAt: "1970-01-01T00:16:40.000Z" })]);
+        // and it rides the archive record's resolutions tail
+        expect(archiveRecords).toHaveLength(1);
+        expect(archiveRecords[0]!.resolutions).toEqual([
+            expect.objectContaining({ id: "att-1", resolvedAt: "1970-01-01T00:16:40.000Z" }),
+        ]);
     });
 });
