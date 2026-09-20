@@ -13,6 +13,7 @@ import { createJsonStore } from "@yurifrl/hub/adapters/json_store";
 import { createJsonlStore } from "@yurifrl/hub/adapters/jsonl_store";
 import { createMemoryBus } from "@yurifrl/hub/adapters/memory_bus";
 import { createStatusAttentionStore } from "@yurifrl/hub/adapters/attention_store";
+import { createFsArchiveStore } from "@yurifrl/hub/adapters/fs_archive_store";
 import { createTimeoutScheduler } from "@yurifrl/hub/adapters/timeout_scheduler";
 import { createOmpAgentRuntime } from "@yurifrl/hub/adapters/omp_agent";
 import { startUnixSocketServer } from "@yurifrl/hub/adapters/unix_socket";
@@ -129,6 +130,7 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
     const summaries = createJsonlStore(env.dataRoot);
     const bus = createMemoryBus();
     const attention = createStatusAttentionStore({ status, summaries, clock, selfIds: () => [deps.selfSessionId()] });
+    const archive = createFsArchiveStore(env.dataRoot);
     const scheduler = createTimeoutScheduler();
     const runtimeOpts = {
         bin: env.ompBin,
@@ -156,6 +158,7 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
             bus,
             runtime,
             attention,
+            archive,
             clock,
             selfSessionId: deps.selfSessionId,
             deliverTo: (sessionId, text) => socket?.deliverTo(sessionId, text) ?? { ok: false, error: { code: "unknown-session", message: "hub not serving", retryable: false } },
@@ -170,6 +173,8 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
 
     let socket: Pick<HubSocketServer, "start" | "close" | "broadcast" | "deliverTo"> | null = null;
     let watcher: WatcherRuntime | null = null;
+    /** cancel handle for the hub-restart reaper timer (docs/02 §hub-restart) */
+    let cancelReaper: (() => void) | null = null;
 
     /** In-process widget tap: the hub session's controller subscribes to the
      * same EventBus the watcher and socket fan-out use (docs/01 stage 4:
@@ -272,10 +277,22 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
             const spawned = await core.spawnBrain(brain.name);
             if (!spawned.ok) return { ok: false, error: spawned.error };
 
+            // hub-restart sweep (docs/02 §hub-restart): one timer, 60s after
+            // start — by then still-live sessions with no event since start
+            // are orphaned rows; reapStale closes+archives them (closedBy
+            // "hub-restart"). A still-running reporter re-attaches on its
+            // next announce, refreshing lastActivity before the window ends.
+            cancelReaper = scheduler.setTimeout(() => {
+                cancelReaper = null;
+                void core.reapStale();
+            }, 60_000);
+
             return ok({ socketPath: started.value.socketPath });
         },
 
         async stop() {
+            cancelReaper?.();
+            cancelReaper = null;
             const adoptedAgentSession = watcher?.state().agentSessionId ?? null;
             watcher?.stop();
             watcher = null;

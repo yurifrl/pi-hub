@@ -49,6 +49,23 @@ export type ArchivedLink = {
   closedAt: string;
 };
 
+/** One immutable archive record — the SessionRecord as last seen plus the
+ * close tail (docs/02 §archive). Filed at archive/YYYY-MM/<closedAt month>/<id>.json;
+ * the record carries its own id because the sessions-map key is gone at that
+ * point. Written once, never rewritten. */
+export type ArchiveRecord = SessionRecord & {
+  id: string;
+  closedAt: string;
+  /** docs/02 §archive closedBy: "cli" | "web" | the closing session's id
+   * (via hub_kill_worker) | "self" (reporter farewell) | "hub-restart" */
+  closedBy: string;
+  finalSummary: string;
+  /** attention items open at close time, resolved as part of the close */
+  resolutions?: AttentionItem[];
+  /** status.json schema version the record was captured under */
+  version?: number;
+};
+
 /** Hub meta block — the first fields of status.json (docs/02 §Hub meta block). */
 export type HubMeta = {
   /** schema version, currently 1; first field so readers can reject early */

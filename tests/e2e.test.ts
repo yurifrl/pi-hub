@@ -407,11 +407,14 @@ describe("e2e — two fake sessions over a real unix socket (docs/01 §Testing)"
                 expect(toolReply.ok).toBe(false);
                 expect(toolReply.error?.code).toBe("denied");
                 expect(typeof toolReply.error?.message).toBe("string");
-                // peer kill/archive are worker-only today (hub-core); the docs/02
-                // consent flow for peer close lands with the archive tasks
+                // kill of a live peer now follows the docs/02 close path
+                // (closing → farewell → archive → tombstone), replying after it
                 const killReply = await bravo.cmd("kill", { sessionId: "sess-alpha" });
-                expect(killReply.ok).toBe(false);
-                expect(killReply.error?.code).toBe("unknown-session");
+                expect(killReply.ok).toBe(true);
+                // wire reply is untyped socket JSON; one named-const narrowing, then typed reads
+                const killResult = killReply.result as { closedAt: string };
+                expect(typeof killResult.closedAt).toBe("string");
+                const killedAt = killResult.closedAt;
 
                 // the list op: full snapshot shape (docs/02 §Ops)
                 const listReply = await bravo.cmd("list", {});
@@ -423,9 +426,9 @@ describe("e2e — two fake sessions over a real unix socket (docs/01 §Testing)"
                     archived: unknown[];
                 };
                 expect(snap.hub.version).toBe(1);
-                expect(Object.keys(snap.sessions).sort()).toEqual(["sess-alpha", "sess-bravo"]);
+                expect(Object.keys(snap.sessions).sort()).toEqual(["sess-bravo"]);
                 expect(Array.isArray(snap.attention)).toBe(true);
-                expect(Array.isArray(snap.archived)).toBe(true);
+                expect(snap.archived).toEqual([{ id: "sess-alpha", path: `archive/${killedAt.slice(0, 7)}/sess-alpha.json`, closedAt: killedAt }]);
 
                 // ---- 5. status.json reflects all of it — read back from disk
                 // (the atomic rewrite landed complete; no torn file, no tmp left)
@@ -433,15 +436,39 @@ describe("e2e — two fake sessions over a real unix socket (docs/01 §Testing)"
                 const final = JSON.parse(finalRaw) as StatusFile;
                 expect(final.version).toBe(1);
                 expect(final.pid).toBe(process.pid);
-                expect(Object.keys(final.sessions).sort()).toEqual(["sess-alpha", "sess-bravo"]);
-                expect(final.sessions["sess-alpha"]!.turns).toBe(1);
-                expect(final.sessions["sess-alpha"]!.toolCounts).toEqual({ confirm: 1 });
-                expect(final.sessions["sess-alpha"]!.phase).toBe("working");
-                expect(final.sessions["sess-alpha"]!.description).toBe("deploying now");
+                expect(Object.keys(final.sessions).sort()).toEqual(["sess-bravo"]);
                 expect(final.sessions["sess-bravo"]!.toolCounts).toEqual({ read: 1 });
                 expect(final.sessions["sess-bravo"]!.title).toBe(bravoPrompt);
-                expect(final.sessions["sess-alpha"]!.log).toBe("logs/sess-alpha.jsonl");
                 expect(await fileExists(join(hub.root, "status.json.tmp"))).toBe(false);
+
+                // sess-alpha's record is on disk (docs/02 §archive): the row as
+                // last seen + the close tail, immutable under archive/YYYY-MM/
+                const archiveRaw = await readFile(join(hub.root, "archive", killedAt.slice(0, 7), "sess-alpha.json"), "utf8");
+                const record = JSON.parse(archiveRaw) as {
+                    id: string;
+                    closedAt: string;
+                    closedBy: string;
+                    finalSummary: string;
+                    version: number;
+                    turns: number;
+                    toolCounts: Record<string, number>;
+                    phase: string;
+                    description?: string;
+                    log: string;
+                    resolutions?: { id: string; kind: string }[];
+                };
+                expect(record.id).toBe("sess-alpha");
+                expect(record.closedAt).toBe(killedAt);
+                expect(record.closedBy).toBe("cli");
+                expect(record.version).toBe(1);
+                expect(record.turns).toBe(1);
+                expect(record.toolCounts).toEqual({ confirm: 1 });
+                expect(record.phase).toBe("working");
+                expect(record.description).toBe("deploying now");
+                expect(record.log).toBe("logs/sess-alpha.jsonl");
+                expect(typeof record.finalSummary).toBe("string");
+                // the approval item resolved earlier in this test rides along
+                expect(record.resolutions?.map((r) => r.kind)).toEqual(["approval"]);
 
                 // the brain child was spawned through the runtime (docs/05 §Entry)
                 expect(hub.spawnCalls).toEqual(["brain"]);

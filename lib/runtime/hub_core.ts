@@ -12,12 +12,13 @@
 
 import { hubError } from "../domain/command";
 import type { HubError, OpName, CommandRequest, Result, Caller } from "../domain/command";
-import type { LogEntry, RawOmpEvent, SessionRecord, StatusFile } from "../domain/session";
+import type { LogEntry, RawOmpEvent, SessionRecord, StatusFile, ArchiveRecord } from "../domain/session";
 import type { StatusStore } from "../ports/status_store";
 import type { SummaryStore } from "../ports/summary_store";
 import type { EventBus } from "../ports/event_bus";
 import type { AgentRuntime, AgentHandle } from "../ports/agent_runtime";
 import type { AttentionStore } from "../ports/attention_store";
+import type { ArchiveStore } from "../ports/archive_store";
 import type { Clock } from "../ports/clock";
 import type { LogStore } from "../adapters/jsonl_store";
 
@@ -29,6 +30,10 @@ export type HubCoreConfig = {
     brainName?: string;
     /** default model handed to spawned children when the caller did not pass one */
     model?: string;
+    /** hub-restart reaper grace (docs/02 §hub-restart): sessions with no event
+     * since the hub's own start are closed+archived once this window passes;
+     * default 60s */
+    restartGraceMs?: number;
 };
 
 export type HubCoreDeps = {
@@ -40,6 +45,8 @@ export type HubCoreDeps = {
     runtime: AgentRuntime;
     /** AttentionStore over the same StatusStore; powers answer/dismiss */
     attention: AttentionStore;
+    /** ArchiveStore — the durable close-record writer (docs/02 §archive) */
+    archive: ArchiveStore;
     clock: Clock;
     /** the hub session's own session id (guard 3: no self-delivery); set by
      * the host once its first session_start has landed */
@@ -71,6 +78,10 @@ export type HubCore = {
     spawnWorker(name?: string, model?: string): Promise<Result<AgentHandle, HubError>>;
     /** dispose every child this core spawned (SIGTERM → kill via runtime) */
     disposeChildren(): Promise<void>;
+    /** hub-restart sweep (docs/02 §hub-restart): close+archive every live
+     * session with no event since the hub's own start, once the grace window
+     * passes; returns how many were reaped. Errors are values. */
+    reapStale(): Promise<Result<number, HubError>>;
     /** live handles — diagnostics and tests */
     children(): AgentHandle[];
 };
@@ -169,6 +180,116 @@ export const createHubCore = (deps: HubCoreDeps, config: HubCoreConfig = {}): Hu
 
     const isSelf = (sessionId: string): boolean => sessionId !== "" && sessionId === deps.selfSessionId();
 
+    const startedAtMs = deps.clock.now();
+    const restartGraceMs = config.restartGraceMs ?? 60_000;
+
+    /** Last agent summary text for a session, else its last description —
+     * the finalSummary fallback chain (docs/02 §archive finalSummary). */
+    const lastAgentSummary = async (id: string, rec: SessionRecord): Promise<string> => {
+        const tail = await deps.summaries.tail(20, { id });
+        if (tail.ok) {
+            const last = [...tail.value].reverse().find((line) => line.kind === "summary");
+            return last?.text ?? rec.description ?? "";
+        }
+        return rec.description ?? "";
+    };
+
+    /** Un-mark a "closing" row back to "open" — every failed close reverts so
+     * a retry is possible (docs/02 §durability: closing must not strand). */
+    const reopen = async (id: string): Promise<Result<void, HubError>> => {
+        const done = await deps.status.update((s) => ({
+            ...s,
+            sessions: Object.fromEntries(Object.entries(s.sessions).map(([k, r]) => (k === id ? [k, { ...r, status: "open" as const }] : [k, r]))),
+        }));
+        return done.ok ? ok(undefined) : { ok: false, error: done.error };
+    };
+
+    /** The one close path every closer uses (docs/02 §kill row; durability
+     * rule 2: status:"closing" → caller farewell → freeze → archive write →
+     * one atomic rewrite dropping the row and appending the archived[]
+     * tombstone, ordered after the archive file is durably on disk. A failed
+     * step before the write re-opens the row; a crash between mark and write
+     * leaves "closing" for the next start's reaper. A record already written
+     * is never rewritten (ArchiveStore denies) — and the tombstone append
+     * skips an existing same-path link so a concurrent close stays harmless. */
+    const closeSession = async (id: string, closedBy: string, farewell?: () => Promise<Result<void, HubError>>): Promise<Result<{ record: ArchiveRecord; path: string }, HubError>> => {
+        const closedAt = iso(deps.clock);
+        const snap = await deps.status.read();
+        if (!snap.ok) return { ok: false, error: snap.error };
+        const rec = snap.value.sessions[id];
+        if (!rec) return { ok: false, error: hubError("unknown-session", `no live session ${id}`, { retryable: false }) };
+        if (rec.status === "closing") return { ok: false, error: hubError("denied", `session ${id} is already closing`, { retryable: false }) };
+
+        const marked = await deps.status.update((s) => ({
+            ...s,
+            sessions: Object.fromEntries(Object.entries(s.sessions).map(([k, r]) => (k === id ? [k, { ...r, status: "closing" as const }] : [k, r]))),
+        }));
+        if (!marked.ok) return { ok: false, error: marked.error };
+
+        if (farewell) {
+            const said = await farewell();
+            if (!said.ok) {
+                const reverted = await reopen(id);
+                if (!reverted.ok) return reverted;
+                return said;
+            }
+        }
+
+        // re-read after the farewell: the close may flush one last event
+        const after = await deps.status.read();
+        if (!after.ok) return { ok: false, error: after.error };
+        const frozen = after.value.sessions[id];
+        if (!frozen) return { ok: false, error: hubError("unknown-session", `session ${id} closed by a concurrent closer`, { retryable: false }) };
+
+        // every attention item resolved during the session's life, in resolve
+        // order (docs/02 §archive resolutions) — status.attention[] keeps the
+        // resolved rows, so the close harvests them from there
+        const resolutions = after.value.attention
+            .filter((i) => i.sessionId === id && i.resolvedAt !== undefined)
+            .sort((a, b) => (a.resolvedAt! < b.resolvedAt! ? -1 : a.resolvedAt! > b.resolvedAt! ? 1 : 0));
+        const record: ArchiveRecord = {
+            ...frozen,
+            id,
+            closedAt,
+            closedBy,
+            finalSummary: await lastAgentSummary(id, frozen),
+            version: after.value.version,
+            ...(resolutions.length > 0 ? { resolutions } : {}),
+        };
+        const written = await deps.archive.write(record);
+        if (!written.ok) {
+            const reverted = await reopen(id);
+            if (!reverted.ok) return reverted;
+            return written;
+        }
+        const final = await deps.status.update((s) => ({
+            ...s,
+            sessions: Object.fromEntries(Object.entries(s.sessions).filter(([k]) => k !== id)),
+            archived: [...s.archived.filter((a) => a.path !== written.value), { id, path: written.value, closedAt }].slice(-200),
+        }));
+        if (!final.ok) return { ok: false, error: final.error };
+        deps.bus.publish({ topic: "status", payload: { kind: "archive", id, path: written.value } });
+        return ok({ record, path: written.value });
+    };
+
+    /** hub-restart sweep (docs/02 §hub-restart): close+archive every live
+     * session with no event since the hub's own start once the grace window
+     * passes. Reporters announce on every start, so a still-running omp
+     * session re-attaches first and keeps its row untouched. */
+    const reapStale = async (): Promise<Result<number, HubError>> => {
+        const cutoff = startedAtMs + restartGraceMs;
+        const snap = await deps.status.read();
+        if (!snap.ok) return { ok: false, error: snap.error };
+        let reaped = 0;
+        for (const [id, rec] of Object.entries(snap.value.sessions)) {
+            const last = Date.parse(rec.lastActivity);
+            if (Number.isNaN(last) || last >= cutoff || rec.status === "closing") continue;
+            const closed = await closeSession(id, "hub-restart");
+            if (closed.ok) reaped++;
+        }
+        return ok(reaped);
+    };
+
     const handleEvent = async (raw: RawOmpEvent): Promise<Result<void, HubError>> => {
         const text = renderText(raw);
         // 1. durable log line (docs/02 §logs)
@@ -259,13 +380,21 @@ export const createHubCore = (deps: HubCoreDeps, config: HubCoreConfig = {}): Hu
             }
             case "kill": {
                 const key = typeof req.args.sessionId === "string" ? req.args.sessionId : typeof req.args.name === "string" ? req.args.name : "";
+                if (!key) return { ok: false, error: hubError("unknown-session", "kill needs sessionId (or worker name)", { retryable: false }) };
                 const handle = findChild(children.values(), key);
-                if (!handle) {
-                    return { ok: false, error: hubError("unknown-session", `no live worker ${key}`, { retryable: false }) };
+                // spawned child with no session row yet (pre-announce): stop
+                // the process; there is no session to mark or archive
+                if (handle && !handle.sessionId) {
+                    const killed = await deps.runtime.kill(handle.name);
+                    if (killed.ok) children.delete(handle.name);
+                    return killed.ok ? ok({ closedAt: iso(deps.clock) }) : killed;
                 }
-                const killed = await deps.runtime.kill(handle.name);
-                if (killed.ok) children.delete(handle.name);
-                return killed.ok ? ok({ closedAt: iso(deps.clock) }) : killed;
+                // proper close (docs/02 §kill): mark closing → SIGTERM farewell
+                // → archive write → tombstone; replies after it all complete
+                const closed = await closeSession(handle?.sessionId ?? key, by, handle ? async () => deps.runtime.kill(handle.name) : undefined);
+                if (!closed.ok) return closed;
+                if (handle) children.delete(handle.name);
+                return ok({ closedAt: closed.value.record.closedAt });
             }
             case "attention": {
                 const action = typeof req.args.action === "string" ? req.args.action : "list";
@@ -329,8 +458,16 @@ export const createHubCore = (deps: HubCoreDeps, config: HubCoreConfig = {}): Hu
                 // docs/02 §ops table: reply { started: true, name }
                 return ok({ started: true, name: res.value.name });
             }
+            case "archive": {
+                // docs/03 §archive: same close path as kill, no worker side
+                // effects; reply { archived: true, id, path }
+                const id = typeof req.args.sessionId === "string" ? req.args.sessionId : typeof req.args.id === "string" ? req.args.id : "";
+                if (!id) return { ok: false, error: hubError("unknown-session", "archive needs sessionId", { retryable: false }) };
+                const closed = await closeSession(id, "archive");
+                if (!closed.ok) return closed;
+                return ok({ archived: true, id, path: closed.value.path });
+            }
             case "tool":
-            case "archive":
             case "logTail":
             case "summaries":
                 return { ok: false, error: hubError("denied", `op ${req.op} not served by the plugin hub yet`, { retryable: false }) };
@@ -357,5 +494,6 @@ export const createHubCore = (deps: HubCoreDeps, config: HubCoreConfig = {}): Hu
             children.clear();
         },
         children: () => [...children.values()],
+        reapStale,
     };
 };
