@@ -53,8 +53,8 @@ const makePi = () => {
             registrations.push({ kind: "event", event: "tool" });
         },
         ui: {
-            setWidget: (key: string, content: string[] | undefined) => {
-                widgets.set(key, content);
+            setWidget: (key: string, content: string[] | ((t: never, theme: never) => { render(w: number): string[] }) | undefined, _opts?: unknown) => {
+                widgets.set(key, typeof content === "function" ? content(undefined as never, undefined as never).render(200).map((l) => l.replace(/\s+$/, "")) : content);
             },
         },
     };
@@ -722,7 +722,7 @@ describe("reportToRaw + widget key", () => {
             // registered (tk-epx P0: order matters); the Map is last-wins
             const handler = firstHandler("session_start");
             expect(handler).toBeDefined();
-            const ctx = { ui: { setWidget: (key: string, content: string[] | undefined) => widgets.set(key, content) } };
+            const ctx = { ui: { setWidget: (key: string, content: string[] | ((t: never, theme: never) => { render(w: number): string[] }) | undefined, _opts?: unknown) => widgets.set(key, typeof content === "function" ? content(undefined as never, undefined as never).render(200).map((l) => l.replace(/\s+$/, "")) : content) } };
             handler!({}, ctx);
             expect(widgets.get(WIDGET_KEY)).toEqual(["hub idle — /hub-start to serve"]);
         } finally {

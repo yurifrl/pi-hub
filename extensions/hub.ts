@@ -9,6 +9,7 @@
 // 5); the self-feed guard (2) lives in the reporter seam this file exposes
 // via selfSessionId + handleLocalFrame (tk-epx consumes them).
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Container, Text } from "@earendil-works/pi-tui";
 import { resolveHubEnv } from "./hub_env";
 import type { HubEnv } from "./hub_env";
 import { createHubLocal } from "./hub_local";
@@ -260,7 +261,7 @@ export const createHubExtension = (injections?: { connect?: Parameters<typeof cr
         // sessionManager may be absent on bare test contexts — identity is
         // only defined for real dispatches; keep the widget claim alive below
         state.selfSessionId = ctx?.sessionManager?.getSessionId?.() ?? "";
-        if (!state.active) ctx.ui.setWidget(WIDGET_KEY, ["hub idle — /hub-start to serve"]);
+        if (!state.active) paintHubWidget(ctx, ["hub idle — /hub-start to serve"]);
     });
 
     reporter.register(pi);
@@ -277,8 +278,8 @@ export const createHubExtension = (injections?: { connect?: Parameters<typeof cr
             // claim the widget slot with an orientation line, then hand the
             // slot to the controller: it subscribes to hub.sock and paints
             // the 8-line attention render under the same key
-            ctx.ui.setWidget(WIDGET_KEY, ["hub active — watching sessions"]);
-            state.widget = startWidget({ setWidget: (lines) => ctx.ui.setWidget(WIDGET_KEY, lines) });
+            paintHubWidget(ctx, ["hub active — watching sessions"]);
+            state.widget = startWidget({ setWidget: (lines) => paintHubWidget(ctx, lines) });
             ctx.ui.notify(out.text, "info");
         },
     });
@@ -293,7 +294,7 @@ export const createHubExtension = (injections?: { connect?: Parameters<typeof cr
                 return;
             }
             stopWidget(ctx);
-            ctx.ui.setWidget(WIDGET_KEY, ["hub idle — /hub-start to serve"]);
+            paintHubWidget(ctx, ["hub idle — /hub-start to serve"]);
             ctx.ui.notify(out.text, "info");
         },
     });
@@ -320,6 +321,20 @@ export const createHubExtension = (injections?: { connect?: Parameters<typeof cr
             clear();
         }
     });
+};
+
+/** Paint the hub widget slot flush-left. The factory component form bypasses
+ * the runtime's array wrapper, which pads every line with paddingX=1 and made
+ * the widget line misalign with status rows (e.g. graft's). */
+const paintHubWidget = (ctx: ExtensionContext, lines: string[] | undefined): void => {
+    const factory = lines === undefined
+        ? undefined
+        : (): Container => {
+            const container = new Container();
+            for (const line of lines) container.addChild(new Text(line, 0, 0));
+            return container;
+        };
+    ctx.ui.setWidget(WIDGET_KEY, factory, { placement: "belowEditor" });
 };
 
 /** The omp entry point (docs/05 §Entry): production factory, no injections. */
