@@ -1,0 +1,62 @@
+---
+import { getCollection } from 'astro:content';
+
+interface Props {
+  title?: string;
+  description?: string;
+  isHome?: boolean;
+  currentSlug?: string;
+}
+
+const { title, description, isHome = false, currentSlug = '' } = Astro.props;
+
+const docs = (await getCollection('docs'))
+  .filter((entry) => entry.id !== '_index')
+  .sort((a, b) => a.data.title.localeCompare(b.data.title));
+
+const searchPages = docs.map((entry) => ({
+  title: entry.data.title,
+  description: entry.data.description ?? '',
+  url: `/${entry.id}.html`,
+}));
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{title ? `${title} · pi-hub Docs` : 'pi-hub Docs'}</title>
+    <meta name="description" content={description ?? 'pi-hub operational documentation'}>
+    <link rel="stylesheet" href="/assets/docs.css">
+  </head>
+  <body>
+    <div class="docs-shell">
+      <aside class="docs-sidebar" id="docs-sidebar" aria-label="Documentation navigation">
+        <a class="docs-home" href="/">pi-hub Docs</a>
+        <nav class="docs-nav">
+          {docs.map((entry) => (
+            <a class:list={['docs-link', { active: entry.id === currentSlug }]} href={`/${entry.id}.html`}>{entry.data.title}</a>
+          ))}
+        </nav>
+        <button class="docs-search-btn" data-search-open type="button">Search…</button>
+      </aside>
+
+      <main class="document">
+        <slot />
+      </main>
+
+      <div class="search-dialog" data-search-dialog hidden>
+        <section class="search-panel">
+          <div class="search-box"><input data-search-input type="search" placeholder="Search documentation" autocomplete="off"><kbd>Esc</kbd></div>
+          <div class="search-results" data-search-results></div>
+          <p class="search-hint">↑ ↓ navigate · Enter open</p>
+        </section>
+      </div>
+      <script is:inline define:vars={{ searchPages }}>
+        window.SEARCH_PAGES = searchPages;
+      </script>
+      <script is:inline src="/assets/docs.js"></script>
+    </div>
+  </body>
+</html>

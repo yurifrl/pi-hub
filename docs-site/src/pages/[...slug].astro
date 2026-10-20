@@ -1,0 +1,18 @@
+---
+import { getCollection, render } from 'astro:content';
+import HubDocsLayout from '../layouts/HubDocsLayout.astro';
+
+export async function getStaticPaths() {
+  const docs = await getCollection('docs');
+  return docs
+    .filter((entry) => entry.id !== '_index')
+    .map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+---
+
+<HubDocsLayout title={entry.data.title} description={entry.data.description} currentSlug={entry.id}>
+  <Content />
+</HubDocsLayout>
