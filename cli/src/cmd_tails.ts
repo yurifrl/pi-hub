@@ -289,10 +289,17 @@ export const cmdTails = async (ctx: CommandContext): Promise<void> => {
   process.on("SIGTERM", stop);
 
   write(`tails: watching ${SESSIONS_DIR} → ${ctx.config.sock} (quiet-end ${END_QUIET_MS / 1000}s)`);
+  // hub down at boot is normal (bridge starts before/alongside the hub):
+  // hold the process and let reconnect() retry every 2s — failWith would end
+  // the bridge exactly when the hub needs to be started (docs/03 §tails).
   const first = await connectHubClient({ socketPath: ctx.config.sock, client: "backfill" });
-  if (!first.ok) return failWith(ctx, first.error.code, first.error.message);
-  cli = first.value;
-  wire(cli);
+  if (first.ok) {
+    cli = first.value;
+    wire(cli);
+  } else {
+    write(`hub unreachable — retrying every 2s`);
+    setTimeout(() => void reconnect(), 2_000);
+  }
   await tick();
 
   // hold until interrupted
