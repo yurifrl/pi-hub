@@ -1,0 +1,153 @@
+/* pi-hub docs · modern-minimal, index-first · same token set as the vault SRE docs (Cobalt) */
+:root {
+  --ink: #172033;
+  --muted: #60708a;
+  --paper: #f8fafc;
+  --surface: #ffffff;
+  --rule: #dce3ed;
+  --rule-strong: #bbc8da;
+  --accent: #2456f0;
+  --accent-ink: #ffffff;
+}
+* { box-sizing: border-box; }
+html { color-scheme: light; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.docs-shell {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+/* ---- sidebar ---- */
+.docs-sidebar {
+  border-right: 1px solid var(--rule);
+  background: var(--surface);
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.docs-home { font-weight: 700; font-size: 15px; color: var(--ink); text-decoration: none; }
+.docs-nav { display: flex; flex-direction: column; gap: 2px; }
+.docs-link {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.docs-link:hover { color: var(--ink); background: var(--paper); }
+.docs-link.active { color: var(--accent); font-weight: 600; }
+.docs-search-btn {
+  margin-top: auto;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+/* ---- document ---- */
+.document {
+  padding: 42px clamp(20px, 6vw, 64px) 80px;
+  max-width: 860px;
+}
+.document h1 { font-size: 28px; line-height: 1.2; margin: 0 0 8px; }
+.document h2 { font-size: 20px; margin-top: 36px; }
+.document code {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.9em;
+}
+.document pre {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+.document pre code { border: 0; padding: 0; background: none; }
+.document table { border-collapse: collapse; }
+.document th, .document td { border: 1px solid var(--rule); padding: 6px 10px; font-size: 14px; }
+.document blockquote { border-left: 3px solid var(--rule-strong); margin: 0; padding-left: 16px; color: var(--muted); }
+
+.home-lede { color: var(--muted); margin-top: 0; }
+
+/* ---- index card grid + infinite scroll ---- */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin: 28px 0;
+}
+.doc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 16px 18px;
+  text-decoration: none;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+.doc-card:hover { border-color: var(--rule-strong); transform: translateY(-1px); }
+.doc-card-title { font-weight: 650; color: var(--ink); font-size: 15px; }
+.doc-card-desc { color: var(--muted); font-size: 13.5px; line-height: 1.45; }
+.scroll-sentinel { height: 1px; }
+.scroll-end { color: var(--muted); font-size: 13px; }
+.prose-home { color: var(--ink); }
+
+/* ---- search dialog ---- */
+.search-dialog {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--ink) 32%, transparent);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh 16px 0;
+  z-index: 40;
+}
+.search-panel {
+  width: min(560px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: 12px;
+  padding: 12px;
+}
+.search-box { display: flex; align-items: center; gap: 8px; }
+.search-box input {
+  flex: 1;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+.search-results { margin-top: 10px; max-height: 320px; overflow-y: auto; }
+.search-result { display: block; padding: 8px 10px; border-radius: 8px; text-decoration: none; }
+.search-result:hover, .search-result.selected { background: var(--paper); }
+.search-result-title { font-weight: 600; font-size: 14px; color: var(--ink); }
+.search-result-desc { font-size: 12.5px; color: var(--muted); }
+.search-hint { color: var(--muted); font-size: 12px; margin: 8px 2px 0; }
+.search-empty { color: var(--muted); font-size: 13px; padding: 8px 10px; }
+
+@media (max-width: 900px) {
+  .docs-shell { grid-template-columns: 1fr; }
+  .docs-sidebar { position: static; height: auto; }
+}

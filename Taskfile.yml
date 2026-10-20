@@ -1,0 +1,10 @@
+version: '3'
+silent: false
+
+tasks:
+  docs:
+    desc: Install, build, and serve the pi-hub docs site (docs-site/) at http://127.0.0.1:4321
+    cmds:
+      - cd docs-site && bun install --frozen-lockfile
+      - cd docs-site && bun run build
+      - cd docs-site && bun run preview

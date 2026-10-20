@@ -85,6 +85,16 @@ kept — shutdown does not archive them).
 
 `spec.html` is the rendered integration spec; `PLAN.md` is the index.
 
+## Docs site
+
+`docs-site/` is a small Astro site that renders `docs-site/src/content/docs/*.md`
+(the Hermes bridge design lives there) with an index-first card grid and
+infinite scroll. One command builds and serves it at `http://127.0.0.1:4321`:
+
+```sh
+task docs
+```
+
 ## Testing
 
 `bun test` per package (root runs all workspaces). Pure domain units,
