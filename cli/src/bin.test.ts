@@ -229,7 +229,8 @@ const spawnHub = async (args: string[]): Promise<{ code: number; stdout: string;
     stdout: "pipe",
     stderr: "pipe",
     stdin: "ignore",
-    env: { ...process.env, NO_COLOR: "" },
+    // never reach a live hub: this suite pins exit codes for the no-hub path
+    env: { ...process.env, NO_COLOR: "", OMP_HUB_SOCK: "/tmp/hub-bin-tests-absent.sock" },
   });
   const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   const code = await proc.exited;

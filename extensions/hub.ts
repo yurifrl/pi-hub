@@ -187,11 +187,13 @@ export const createHubExtension = (injections?: { connect?: Parameters<typeof cr
         },
         // session identity resolved at the boundary (docs/01: hosts parse,
         // lib decides). The session manager's id is the omp session id.
+        // Optional-chained through: bare/mocked contexts may lack methods;
+        // identity degrades to "" and the reporter skips host facts.
         sessionFacts: () => {
             const ctx = lastCtx;
             return {
-                sessionId: ctx?.sessionManager.getSessionId() ?? "",
-                title: ctx?.sessionManager.getSessionName() ?? "",
+                sessionId: ctx?.sessionManager?.getSessionId?.() ?? "",
+                title: ctx?.sessionManager?.getSessionName?.() ?? "",
                 cwd: ctx?.cwd ?? process.cwd(),
                 model: ctx?.model?.id ?? "",
             };

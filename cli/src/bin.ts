@@ -30,6 +30,7 @@ import {
   watchBody,
   webBody,
   agentBody,
+  tailsBody,
 } from "./commands";
 import { KillDeclined } from "./cmd_kill";
 import { CliError } from "./cli_errors";
@@ -120,6 +121,8 @@ sub("watch", "full-screen split console").action(invoke(watchBody));
 sub("agent", "start the hub agent")
   .option("--surface <surface>")
   .action(invoke(agentBody));
+
+sub("tails", "transcript-tail bridge: feed the hub sessions that cannot report themselves").action(invoke(tailsBody));
 
 sub("web", "serve the Hub Console")
   .option("--port <port>", "bind port", parsePositiveInt)

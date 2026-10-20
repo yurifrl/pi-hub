@@ -21,8 +21,8 @@
 // the suite green — the in-process layer is fully covered by the other
 // suites; this file adds the live-omp proof on top).
 //
-// The Bun test drives the child the same way the python probes
-// (.agents/tmp/probe_live_omp*.py) did during development; polling (never
+// The Bun test drives the child through tests/helpers/live_omp.ts, the
+// TypeScript port of the throwaway dev probes; polling (never
 // sleeps-as-sync) per the sj9 de-flake pattern.
 import { describe, it, expect } from "bun:test";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";

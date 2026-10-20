@@ -88,6 +88,16 @@ afterEach(() => {
 
 /** Capture stdout/stderr writes and exitCode for one run() invocation. */
 const capture = async (argv: string[]): Promise<{ code: number; out: string; err: string }> => {
+  // env isolation: the host machine's hub env must not leak into in-process
+  // config resolution — these assertions pin the defaults (spawnModel "").
+  const saved = {
+    OMP_HUB_MODEL: process.env.OMP_HUB_MODEL,
+    OMP_HUB_SOCK: process.env.OMP_HUB_SOCK,
+    OMP_BIN: process.env.OMP_BIN,
+  };
+  delete process.env.OMP_HUB_MODEL;
+  delete process.env.OMP_HUB_SOCK;
+  delete process.env.OMP_BIN;
   const chunks: string[] = [];
   const errs: string[] = [];
   const origWrite = process.stdout.write.bind(process.stdout);
@@ -106,6 +116,10 @@ const capture = async (argv: string[]): Promise<{ code: number; out: string; err
     const code = await run(argv);
     return { code, out: chunks.join(""), err: errs.join("") };
   } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
     process.stdout.write = origWrite;
     process.stderr.write = origErrWrite;
     process.exitCode = origExitCode;

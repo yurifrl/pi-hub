@@ -23,6 +23,7 @@ import { cmdLog } from "./cmd_log";
 import { cmdSummaries } from "./cmd_summaries";
 import { cmdWatch } from "./cmd_watch";
 import { cmdAgent } from "./cmd_agent";
+import { cmdTails } from "./cmd_tails";
 import { cmdWeb } from "./cmd_web";
 
 /** Commander grammar keeps `[id] <text...>` unsplit — the body owns the split. */
@@ -122,4 +123,8 @@ export const agentBody: CommandBody = async (ctx, opts): Promise<void> => {
 
 export const webBody: CommandBody = async (ctx, opts): Promise<void> => {
   await cmdWeb(ctx, (opts as { port?: number } | undefined)?.port);
+};
+
+export const tailsBody: CommandBody = async (ctx): Promise<void> => {
+  await cmdTails(ctx);
 };
