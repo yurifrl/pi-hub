@@ -201,7 +201,7 @@ export const cmdTails = async (ctx: CommandContext): Promise<void> => {
     if (res.ok) {
       cli = res.value;
       wire(cli);
-      for (const st of Object.values(state.sessions)) if (st.sessionId) announce(st);
+      for (const st of Object.values(state.sessions)) if (st.sessionId && !st.ended) announce(st);
     } else {
       setTimeout(() => void reconnect(), 2_000);
     }
