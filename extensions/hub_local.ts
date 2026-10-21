@@ -54,6 +54,9 @@ export type HubLocalDeps = {
     env: HubEnv;
     /** the hub session's own session id; resolves "" until the first session_start */
     selfSessionId: () => string;
+    /** standalone serve (docs/07 §Run): skip the brain child — the socket,
+     * stores, and ops need no omp session; only /hub-start's embedded stack does */
+    serveBrain?: boolean;
     overrides?: HubLocalOverrides;
 };
 
@@ -273,9 +276,13 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
             // spawn the brain child (docs/05 §Entry step 3): env OMP_HUB_BRAIN=1
             // (+ OMP_HUB_MODEL) via the omp_agent adapter; readiness = the
             // child's session_start frame landing through handleReport.
-            const brain = brainSpec();
-            const spawned = await core.spawnBrain(brain.name);
-            if (!spawned.ok) return { ok: false, error: spawned.error };
+            // Standalone serve (deps.serveBrain === false) skips it: the
+            // socket, stores, and ops need no omp session (docs/07 §Run).
+            if (deps.serveBrain !== false) {
+                const brain = brainSpec();
+                const spawned = await core.spawnBrain(brain.name);
+                if (!spawned.ok) return { ok: false, error: spawned.error };
+            }
 
             // hub-restart sweep (docs/02 §hub-restart): one timer, 60s after
             // start — by then still-live sessions with no event since start

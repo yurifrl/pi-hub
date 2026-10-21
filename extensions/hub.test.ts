@@ -251,6 +251,27 @@ describe("createHubCommands.hubStart — socket bound + brain spawned via inject
         await local.stop();
     });
 
+    it("serveBrain: false — socket serves ops with no brain child (docs/07 §Run standalone serve)", async () => {
+        const { env, sockPath } = await makeEnv();
+        const rt = makeRuntime();
+        const local = createHubLocal({
+            env,
+            selfSessionId: () => "s-self",
+            serveBrain: false,
+            overrides: { runtime: rt.runtime },
+        });
+        const out = await local.start();
+        expect(out.ok).toBe(true);
+        expect(out.ok && out.value.socketPath).toBe(sockPath);
+        // no brain child: the standalone hub spawns nothing at start
+        expect(rt.spawns.length).toBe(0);
+        // list op still answers over the real socket
+        const client = await connectClient(env.sock);
+        const reply = await client.cmd("list", {});
+        expect(reply.ok).toBe(true);
+        await local.stop();
+    });
+
     it("real unix socket: reporter frame in → reply frame out (frames, not sleeps)", async () => {
         const { env } = await makeEnv();
         const rt = makeRuntime();

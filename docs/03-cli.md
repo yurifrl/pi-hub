@@ -167,6 +167,11 @@ Shared conventions:
 - `--json` / `--ndjson` → usage, exit 1: a server has no snapshot semantics.
 - Errors: port busy → 2 with the port in the message.
 
+**`hub serve`** — a standalone hub: binds the socket, serves ops, runs until signaled. The manager path for `bridge/run` (docs/07 §Run) — no omp session hosts it. Composes `createHubLocal` (extensions/hub_local.ts) with `serveBrain: false`: no brain child, no widget; `agent` op fails with `unavailable-hub` (no omp runtime backs it). Socket path from `OMP_HUB_SOCK` (or `--config sock`); SIGINT/SIGTERM stop the socket and exit 0.
+- Human: `hub serving on <socket path>` on stdout.
+- `--json` / `--ndjson` → usage, exit 1: a server has no snapshot semantics.
+- Errors: hub already live on the socket (handshake refused / bind refused) → 2.
+
 **`hub tails`** — the transcript-tail bridge: feeds the hub sessions that cannot report themselves. Reads `~/.omp/agent/sessions/*/*.jsonl` incrementally and translates transcript lines into reporter frames over `hub.sock` (`client:"backfill"`), so pre-plugin omp sessions appear on the board like any other peer. Watch-me-not-mine: one file scanner + one incremental reader per transcript; no transcript mutation.
 - State persists in `~/.hub/tails-state.json` (offsets + session ids); restarts resume offsets and re-announce only non-ended sessions (attach-on-connect, same contract as the plugin reporter). Discovery at boot only picks up transcripts touched since process start — dead history is never announced.
 - Turn semantics: `session_start` on discovery; `user_message` / `assistant_message` / `tool_call` per transcript line; `agent_end` when a transcript goes quiet `40s` after activity (re-arms on the next line). Ended sessions are not re-announced after a hub restart.

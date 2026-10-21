@@ -25,6 +25,7 @@ import { cmdWatch } from "./cmd_watch";
 import { cmdAgent } from "./cmd_agent";
 import { cmdTails } from "./cmd_tails";
 import { cmdWeb } from "./cmd_web";
+import { cmdServe } from "./cmd_serve";
 
 /** Commander grammar keeps `[id] <text...>` unsplit — the body owns the split. */
 export type MixedTail = { head: string | undefined; tail: string[] };
@@ -127,4 +128,8 @@ export const webBody: CommandBody = async (ctx, opts): Promise<void> => {
 
 export const tailsBody: CommandBody = async (ctx): Promise<void> => {
   await cmdTails(ctx);
+};
+
+export const serveBody: CommandBody = async (ctx): Promise<void> => {
+  await cmdServe(ctx);
 };

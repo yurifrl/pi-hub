@@ -29,6 +29,7 @@ import {
   toolBody,
   watchBody,
   webBody,
+  serveBody,
   agentBody,
   tailsBody,
 } from "./commands";
@@ -127,6 +128,8 @@ sub("tails", "transcript-tail bridge: feed the hub sessions that cannot report t
 sub("web", "serve the Hub Console")
   .option("--port <port>", "bind port", parsePositiveInt)
   .action(invoke(webBody));
+
+sub("serve", "run a standalone hub on the socket (docs/07 §Run)").action(invoke(serveBody));
 
 // ---- boot ---------------------------------------------------------------
 

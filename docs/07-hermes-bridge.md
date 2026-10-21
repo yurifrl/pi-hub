@@ -7,27 +7,30 @@ description: Run Hermes Agent in a container, working the hub board from inside 
 
 ## Run it (start here)
 
-**1. Start the hub** so `~/.hub/hub.sock` exists. The hub is plain lib code
-(`startUnixSocketServer`, `lib/adapters/unix_socket.ts`) — no omp needed, but
-there is no standalone CLI entry for it yet, so the practical path is:
-
-```sh
-/hub-start
-```
-
-in any omp session with the plugin loaded. That session becomes the hub and
-serves the socket (`chmod 0777` after listen so the container's uid 1000 can
-connect).
-
-**2. Run Hermes** — it's a CLI agent, one container per session, not a daemon:
+**1. `bridge/run` is the manager — it starts the hub itself.** No omp session
+is required to host the socket:
 
 ```sh
 bridge/run
 ```
 
-Builds the image on first run (base image pull needs disk headroom) and starts
-an interactive Hermes session with `--rm -it`. The socket file must already
-exist (step 1) or the mount fails at start.
+Before launching the container it probes the hub with `hub list` (a full
+handshake + reply round-trip is liveness — docs/03 §Exit codes: exit 2 =
+unavailable-hub):
+
+- exit 0 — a hub is already serving on `~/.hub/hub.sock`; reuse it.
+- exit 2 — no hub: starts a standalone one, `hub serve`, waits for the socket
+  to accept, then continues. On exit it sends SIGTERM to that serve process —
+  serve stops the socket and exits 0 — but only the hub this run started; a
+  hub that was already up is left alone.
+
+The standalone hub has no brain child and no widget (the socket, stores, and
+ops need no omp session — `extensions/serve.ts` composes `createHubLocal`
+with `serveBrain: false`).
+
+**2. The omp-embedded hub (`/hub-start`) remains the alternative.** A session
+with the plugin loaded hosts the same socket plus a brain child and the
+widget. `bridge/run` reuses either — the wire is identical.
 
 **3. Work the hub from inside Hermes.** Just ask:
 
@@ -50,7 +53,7 @@ Two injection points, registered by `bridge/hermes-hub-plugin/`:
 
 ```mermaid
 flowchart LR
-    H["hub<br/>(/hub-start today,<br/>lib entry pending)"] ---|~/.hub/hub.sock<br/>chmod 0777| S["single-file mount<br/>→ /run/hub.sock"]
+    H["hub serve<br/>(started by bridge/run<br/>or /hub-start)"] ---|~/.hub/hub.sock<br/>chmod 0777| S["single-file mount<br/>→ /run/hub.sock"]
     S --- C["Hermes container<br/>uid 1000"]
     C -->|cmd frame, v:1| H
     H -->|reply frame| C
@@ -69,7 +72,8 @@ flowchart LR
 
 | file | owns |
 |---|---|
-| `bridge/run` | one-shot start: builds the image, `container run --rm -it`, socket + plugin mounts, `HUB_SOCKET` env |
+| `bridge/run` | the manager: ensures a live hub (reuse or `hub serve`), builds the image, `container run --rm -it`, socket + plugin mounts, `HUB_SOCKET` env |
+| `extensions/serve.ts` + `cli/src/cmd_serve.ts` | the standalone hub: `hub serve` composition (`createHubLocal`, `serveBrain: false`), runs until SIGINT/SIGTERM, exit 0 |
 | `bridge/Dockerfile` | `python:3.13-slim` + pinned `hermes-agent==0.19.0` wheel (Renovate bumps it), non-root `hermes` user |
 | `bridge/hermes-hub-plugin/` | plugin: `__init__.py` (tool + hook + frame codec), `plugin.yaml` (discovery manifest) |
 
@@ -79,5 +83,8 @@ flowchart LR
   the plugin API has no inbound socket. Hermes polls per turn. Revisit if
   Hermes adds a listener API.
 - **`stream` is not a tool op** — the tool rejects it explicitly.
+- **Standalone serve is ops-complete, agent-ops fail clean** — `agent`
+  (toggle the hub agent child) returns `unavailable-hub` when no omp runtime
+  backs the serve process.
 - Per-op deadline 30 s (`docs/02 §hub.sock`); a timeout maps to a retryable
   `unavailable-hub` error, nothing throws past the plugin boundary.

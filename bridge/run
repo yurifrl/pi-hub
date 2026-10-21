@@ -1,20 +1,61 @@
 #!/bin/sh
 # Run Hermes attached to the host hub — one-shot interactive CLI, removed on exit.
-# Start the hub first: /hub-start (creates ~/.hub/hub.sock, chmod 0777 after
-# listen — lib/adapters/unix_socket.ts). Single-file socket mount is the
-# transport that works under Apple containers (docs/07-hermes-bridge.md).
+# This script is the manager (docs/07-hermes-bridge.md §Run): it ensures a hub
+# is live — reusing one (probe via `hub list`; a full cmd/reply round-trip is
+# liveness) or starting a standalone `hub serve` (no omp session needed) —
+# then launches the container. On exit it stops the hub only if this run
+# started it. Single-file socket mount is the transport that works under
+# Apple containers.
 set -eu
 cd "$(dirname "$0")"
 IMAGE=pi-hub-hermes
 
-# Build once; rebuild only when the Dockerfile or plugin changes.
-if ! container image list | grep -q "$IMAGE"; then
-    container build -t "$IMAGE" .
+# Build once; rebuild only when the Dockerfile or plugin change
+if [ ! -f .image-built ] || [ Dockerfile -nt .image-built ] || [ -n "$(find hermes-hub-plugin -newer .image-built -print -quit 2>/dev/null)" ]; then
+  container build -t "$IMAGE" .
+  touch .image-built
 fi
 
-exec container run --rm -it \
-    -u 1000:1000 \
-    -v "${HOME}/.hub/hub.sock:/run/hub.sock" \
-    -v "$PWD/hermes-hub-plugin:/home/hermes/.hermes/plugins/hermes-hub:ro" \
-    -e HUB_SOCKET=/run/hub.sock \
-    "$IMAGE"
+# Shared socket path — hub side and container mount must agree.
+SOCK="${OMP_HUB_SOCK:-$HOME/.hub/hub.sock}"
+
+# Ensure a live hub: `hub list` exit 0 = already up; exit 2 = unavailable-hub
+# (docs/03 §Exit codes) = start one. Any other exit is a real failure.
+rc=0
+hub list >/dev/null 2>&1 || rc=$?
+SERVE_PID=0
+if [ "$rc" -eq 0 ]; then
+  :
+elif [ "$rc" -eq 2 ]; then
+  hub serve &
+  SERVE_PID=$!
+  # wait for the socket to accept: handshake round-trip via `hub list`
+  i=0
+  until hub list >/dev/null 2>&1; do
+    i=$((i + 1))
+    if [ "$i" -ge 50 ]; then
+      echo "hub serve did not come up within 10s" >&2
+      kill "$SERVE_PID" 2>/dev/null || true
+      exit 2
+    fi
+    sleep 0.2
+  done
+else
+  echo "hub probe failed (exit $rc)" >&2
+  exit 2
+fi
+
+cleanup() {
+  if [ "$SERVE_PID" -ne 0 ]; then
+    # SIGTERM → serve.ts's signal handler → local.stop() → socket unlinked,
+    # children disposed, exit 0 (docs/07 §Run).
+    kill -TERM "$SERVE_PID" 2>/dev/null || true
+    wait "$SERVE_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+container run --rm -it \
+  -v "$SOCK:/run/hub.sock" \
+  -e OMP_HUB_SOCK=/run/hub.sock \
+  "$IMAGE"
