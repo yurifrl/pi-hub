@@ -29,6 +29,7 @@ import { readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { connectHubClient, type HubClient } from "@yurifrl/hub/adapters/unix_socket";
+import { clip, cwdFromDir, idFromName, textOf, type TranscriptLine } from "@yurifrl/hub";
 import type { CommandContext } from "./commands";
 import { failWith } from "./cmd_mutation_helpers";
 
@@ -38,38 +39,9 @@ const END_QUIET_MS = 40_000;
 const TAIL_BYTES = 128 * 1024;
 const STATE_VERSION = 1;
 
-// ---- transcript line → reporter frame --------------------------------------
-
-type TranscriptLine = {
-  type?: string;
-  customType?: string;
-  data?: Record<string, unknown>;
-  message?: {
-    role?: string;
-    content?: Array<{ type?: string; text?: string; name?: string; arguments?: unknown }>;
-  };
-};
-
-const textOf = (message: TranscriptLine["message"]): string =>
-  (message?.content ?? [])
-    .filter((c) => c.type === "text")
-    .map((c) => c.text ?? "")
-    .join(" ");
-
-const clip = (s: string, n = 160): string => {
-  const one = s.replace(/\s+/g, " ").trim();
-  return one.length > n ? `${one.slice(0, n)}…` : one;
-};
-
-/** sessionId = trailing UUID of the transcript filename "…_<uuid>.jsonl". */
-const idFromName = (name: string): string => {
-  const m = /_([0-9a-f-]{36})\.jsonl$/.exec(name);
-  return m ? m[1] : name.replace(/\.jsonl$/, "");
-};
-
-/** cwd from the session directory name: omp flattens paths with "-" and
- * strips the leading slash ("-Users-yuri-.omp-wt-…" → /Users/yuri/.omp/wt/…). */
-const cwdFromDir = (dir: string): string => dir.replace(/^-/, "/").replace(/-/g, "/");
+// transcript-line → reporter-frame mapping helpers (clip/textOf/idFromName/
+// cwdFromDir) live in @yurifrl/hub (lib/domain/omp_sessions.ts) — shared with
+// the sessions op (docs/02 §ops); this file keeps only the frame translation.
 
 /** One reporter frame per transcript line; [] when the line carries no signal.
  * Same mapping the plugin reporter uses (docs/05 §Reporter table), derived
