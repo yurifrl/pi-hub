@@ -1,133 +1,92 @@
-// cli/src/config.ts — HubCliConfig resolution, first hit wins (docs/03-cli.md §bin):
-// 1) --config file  2) env  3) ~/.hub/config.json  4) built-in defaults.
-// Pure-ish module: fs touches only through node:fs against explicit paths.
+// cli/src/config.ts — HubCliConfig resolution (spec §bin → Config):
+// --config file > environment > ~/.hub/config.json > defaults. First hit wins per key.
 
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { CliError } from "./errors";
 
 export interface HubCliConfig {
-  sock: string; // default ~/.hub/hub.sock; env OMP_HUB_SOCK
-  dataRoot: string; // default ~/.hub
-  replyTimeoutMs: number; // default 10000; expiry maps to exit code 3
-  webPort: number; // default 4820
-  spawnModel: string; // default "" (hub picks); env OMP_HUB_MODEL
-  ompBin: string; // default "omp"; env OMP_BIN
-  color: boolean; // default true; false when NO_COLOR set or --no-color
+  sock: string;
+  dataRoot: string;
+  replyTimeoutMs: number;
+  webPort: number;
+  spawnModel: string;
+  ompBin: string;
+  color: boolean;
 }
 
-export const DATA_ROOT_DEFAULT = join(homedir(), ".hub");
-
 export type ConfigInputs = {
-  configPath?: string; // --config <path>
-  env?: NodeJS.ProcessEnv;
-  argv?: string[]; // full argv — --no-color / NO_COLOR affect color before file loads
+  configPath?: string;
+  env: Record<string, string | undefined>;
+  noColorFlag: boolean;
+  home?: string;
 };
 
-/** Parse and validate one config file body into partial overrides. */
-const parseConfigFile = (name: string, content: string): Partial<HubCliConfig> => {
+const readFileConfig = (path: string, mustExist: boolean): Partial<HubCliConfig> => {
+  if (!existsSync(path)) {
+    if (mustExist) throw new CliError("usage", `--config ${path}: file not found`);
+    return {};
+  }
   let raw: unknown;
   try {
-    raw = JSON.parse(content);
+    raw = JSON.parse(readFileSync(path, "utf8"));
   } catch (e) {
-    throw new ConfigError(`--config ${name} is not valid JSON: ${(e as Error).message}`);
+    throw new CliError("usage", `--config ${path}: ${(e as Error).message}`);
   }
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-    throw new ConfigError(`--config ${name} must be a JSON object`);
+    throw new CliError("usage", `${path} must be a JSON object`);
   }
   const o = raw as Record<string, unknown>;
-  const str = (k: string): string | undefined => {
+  const out: Partial<HubCliConfig> = {};
+  const str = (k: "sock" | "dataRoot" | "spawnModel" | "ompBin"): void => {
     const v = o[k];
-    if (v === undefined) return undefined;
-    if (typeof v !== "string" || v.length === 0) throw new ConfigError(`--config ${name}: "${k}" must be a non-empty string`);
-    return v;
+    if (v === undefined) return;
+    if (typeof v !== "string" || v === "") throw new CliError("usage", `${path}: "${k}" must be a non-empty string`);
+    out[k] = v;
   };
-  const num = (k: string): number | undefined => {
+  const num = (k: "replyTimeoutMs" | "webPort"): void => {
     const v = o[k];
-    if (v === undefined) return undefined;
-    if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) throw new ConfigError(`--config ${name}: "${k}" must be a positive number`);
-    return v;
+    if (v === undefined) return;
+    if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) throw new CliError("usage", `${path}: "${k}" must be a positive number`);
+    out[k] = v;
   };
-  const bool = (k: string): boolean | undefined => {
-    const v = o[k];
-    if (v === undefined) return undefined;
-    if (typeof v !== "boolean") throw new ConfigError(`--config ${name}: "${k}" must be a boolean`);
-    return v;
-  };
-  const sock = str("sock");
-  const dataRoot = str("dataRoot");
-  const replyTimeoutMs = num("replyTimeoutMs");
-  const webPort = num("webPort");
-  const spawnModel = str("spawnModel");
-  const ompBin = str("ompBin");
-  const color = bool("color");
-  return {
-    ...(sock !== undefined ? { sock } : {}),
-    ...(dataRoot !== undefined ? { dataRoot } : {}),
-    ...(replyTimeoutMs !== undefined ? { replyTimeoutMs } : {}),
-    ...(webPort !== undefined ? { webPort } : {}),
-    ...(spawnModel !== undefined ? { spawnModel } : {}),
-    ...(ompBin !== undefined ? { ompBin } : {}),
-    ...(color !== undefined ? { color } : {}),
-  };
+  str("sock");
+  str("dataRoot");
+  str("spawnModel");
+  str("ompBin");
+  num("replyTimeoutMs");
+  num("webPort");
+  if (o.color !== undefined) {
+    if (typeof o.color !== "boolean") throw new CliError("usage", `${path}: "color" must be a boolean`);
+    out.color = o.color;
+  }
+  return out;
 };
 
-/** Usage-class failure raised by config resolution; bin maps it to exit 1. */
-export class ConfigError extends Error {}
-
-export const resolveConfig = (inputs: ConfigInputs = {}): HubCliConfig => {
-  const env = inputs.env ?? process.env;
-
-  // defaults — ~/.hub tree
+export const resolveConfig = (inputs: ConfigInputs): HubCliConfig => {
+  const home = inputs.home ?? homedir();
+  const dataRoot = join(home, ".hub");
   const defaults: HubCliConfig = {
-    sock: join(DATA_ROOT_DEFAULT, "hub.sock"),
-    dataRoot: DATA_ROOT_DEFAULT,
+    sock: join(dataRoot, "hub.sock"),
+    dataRoot,
     replyTimeoutMs: 10_000,
     webPort: 4820,
-    spawnModel: "", // empty = hub picks the model
+    spawnModel: "",
     ompBin: "omp",
     color: true,
   };
+  const { env } = inputs;
+  const fromEnv: Partial<HubCliConfig> = {};
+  if (env.OMP_HUB_SOCK) fromEnv.sock = env.OMP_HUB_SOCK;
+  if (env.OMP_HUB_MODEL) fromEnv.spawnModel = env.OMP_HUB_MODEL;
+  if (env.OMP_BIN) fromEnv.ompBin = env.OMP_BIN;
+  if (env.NO_COLOR !== undefined && env.NO_COLOR !== "") fromEnv.color = false;
 
-  // 3) ~/.hub/config.json — absent is NOT an error
-  let file: Partial<HubCliConfig> = {};
-  const userFile = join(DATA_ROOT_DEFAULT, "config.json");
-  if (existsSync(userFile)) {
-    try {
-      file = parseConfigFile(userFile, readFileSync(userFile, "utf8"));
-    } catch (e) {
-      if (e instanceof ConfigError) throw e;
-      throw new ConfigError(`unreadable ${userFile}: ${(e as Error).message}`);
-    }
-  }
+  const fromFile = readFileConfig(join(dataRoot, "config.json"), false);
+  const explicit = inputs.configPath !== undefined ? readFileConfig(inputs.configPath, true) : {};
 
-  // 2) env overrides
-  const envOverrides: Partial<HubCliConfig> = {
-    ...(env.OMP_HUB_SOCK ? { sock: env.OMP_HUB_SOCK } : {}),
-    ...(env.OMP_HUB_MODEL ? { spawnModel: env.OMP_HUB_MODEL } : {}),
-    ...(env.OMP_BIN ? { ompBin: env.OMP_BIN } : {}),
-    ...(env.NO_COLOR ? { color: false } : {}),
-  };
-
-  // 1) --config file, explicit path — missing/unreadable IS an error (usage)
-  const explicit = inputs.configPath;
-  const explicitOverrides = explicit
-    ? (() => {
-        if (!existsSync(explicit)) throw new ConfigError(`--config ${explicit}: no such file`);
-        let content: string;
-        try {
-          content = readFileSync(explicit, "utf8");
-        } catch (e) {
-          throw new ConfigError(`--config ${explicit}: unreadable (${(e as Error).message})`);
-        }
-        return parseConfigFile(explicit, content);
-      })()
-    : {};
-
-  const merged: HubCliConfig = { ...defaults, ...file, ...envOverrides, ...explicitOverrides };
-
-  // --no-color (parsed from argv here so config stays the single color authority)
-  if (inputs.argv?.includes("--no-color")) merged.color = false;
-
+  const merged: HubCliConfig = { ...defaults, ...fromFile, ...fromEnv, ...explicit };
+  if (inputs.noColorFlag) merged.color = false;
   return merged;
 };

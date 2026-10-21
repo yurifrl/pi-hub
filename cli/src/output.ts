@@ -1,44 +1,43 @@
-// cli/src/output.ts — output-policy plumbing (docs/03-cli.md §Output policies).
-// Policy decision (json vs ndjson vs human), envelope serialization, and the
-// process-exit mapping. Rendering (human text, ANSI) lives in cli/src/render/ —
-// not here (docs/03 §bin: bin.ts contains no rendering).
+// cli/src/output.ts — output policy + envelope emission (spec §Output policies).
+// Machine modes: exactly one envelope per invocation on stdout, no ANSI.
 
-import { exitCodeFor, type ErrorCode, type OutputEnvelope } from "./envelope";
+import { CliError, type ErrorCode } from "./errors";
 
 export type OutputFormat = "human" | "json" | "ndjson";
 
 export type OutputPolicy = {
   format: OutputFormat;
   color: boolean;
+  /** true for --json / --ndjson */
+  machine: boolean;
 };
 
-/** argv-level format collision: --json together with --ndjson → usage, exit 1. */
-export class PolicyError extends Error {}
+export type OutputEnvelope =
+  | { type: "snapshot"; data: unknown }
+  | { type: "error"; error: { code: ErrorCode; message: string; detail?: unknown } };
 
-export const selectPolicy = (argv: { json?: boolean; ndjson?: boolean }, color: boolean): OutputPolicy => {
-  if (argv.json && argv.ndjson) {
-    throw new PolicyError("--json and --ndjson are mutually exclusive");
+export const selectPolicy = (flags: { json?: boolean; ndjson?: boolean }, color: boolean): OutputPolicy => {
+  if (flags.json && flags.ndjson) throw new CliError("usage", "--json and --ndjson are mutually exclusive");
+  const format: OutputFormat = flags.json ? "json" : flags.ndjson ? "ndjson" : "human";
+  return { format, color: color && format === "human", machine: format !== "human" };
+};
+
+export const serializeEnvelope = (env: OutputEnvelope, format: "json" | "ndjson"): string =>
+  (format === "json" ? JSON.stringify(env, null, 2) : JSON.stringify(env)) + "\n";
+
+/** Machine mode: write one snapshot envelope. Human mode: no-op — the caller renders. */
+export const emitSnapshot = (policy: OutputPolicy, data: unknown): void => {
+  if (policy.format === "human") return;
+  process.stdout.write(serializeEnvelope({ type: "snapshot", data }, policy.format));
+};
+
+/** Report a failure: envelope on stdout (machine) or message on stderr (human). */
+export const reportError = (policy: OutputPolicy, err: CliError): void => {
+  if (policy.format === "human") {
+    process.stderr.write(`hub: ${err.message}\n`);
+    return;
   }
-  return {
-    format: argv.json ? "json" : argv.ndjson ? "ndjson" : "human",
-    color,
-  };
-};
-
-/**
- * Serialize one envelope for machine modes. json: pretty two-space object +
- * trailing newline. ndjson: compact single line + newline. Never ANSI.
- */
-export const serializeEnvelope = (env: OutputEnvelope, format: "json" | "ndjson"): string => {
-  const line = format === "ndjson" ? JSON.stringify(env) : JSON.stringify(env, null, 2);
-  return line + "\n";
-};
-
-export const writeEnvelope = (env: OutputEnvelope, format: "json" | "ndjson"): void => {
-  process.stdout.write(serializeEnvelope(env, format));
-};
-
-/** Process exit for one envelope's error code — exhaustive over ErrorCode. */
-export const exitForError = (code: ErrorCode): never => {
-  process.exit(exitCodeFor(code));
+  const error: { code: ErrorCode; message: string; detail?: unknown } = { code: err.code, message: err.message };
+  if (err.detail !== undefined) error.detail = err.detail;
+  process.stdout.write(serializeEnvelope({ type: "error", error }, policy.format));
 };
