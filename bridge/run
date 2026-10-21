@@ -13,7 +13,7 @@ IMAGE=pi-hub-hermes
 # Build once; rebuild only when the Dockerfile changes. The plugin is
 # bind-mounted from source below, so plugin edits never need a rebuild.
 if [ ! -f .image-built ] || [ Dockerfile -nt .image-built ]; then
-  docker build -t "$IMAGE" .
+  container build -t "$IMAGE" .
   touch .image-built
 fi
 
