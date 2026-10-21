@@ -5,7 +5,7 @@
 // directions, one JSON object per \n-terminated frame, UTF-8, no framing
 // escapes. Every frame carries v (protocol version, currently 1).
 
-import { unlink } from "node:fs/promises";
+import { chmod, unlink } from "node:fs/promises";
 import net from "node:net";
 import { OP_NAMES, hubError } from "../domain/command";
 import type { CommandRequest, HubCode, HubError, Result } from "../domain/command";
@@ -299,7 +299,15 @@ export const startUnixSocketServer = (opts: ServerOptions) => {
             });
         });
         server.listen(path);
-        return Promise.race([failed, listening.then(() => ok({ socketPath: path }))]);
+        return Promise.race([
+            failed,
+            listening.then(async () => {
+                // world-accessible so containerized clients (e.g. Hermes bridge) can
+                // connect across the single-file virtiofs mount (docs/07-hermes-bridge.md)
+                await chmod(path, 0o777);
+                return ok({ socketPath: path });
+            }),
+        ]);
     };
 
     const close = async (): Promise<void> => {
