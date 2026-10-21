@@ -52,7 +52,7 @@ Rules the matrix encodes:
 - `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` are optional peerDependencies of the root package only, so the plugin compiles against whatever the host ships and renders through the host's TUI. lib, cli, and web never reference them.
 - extensions import lib; cli and web import lib only — never each other,
   never the extension, never omp types directly. One sanctioned exception:
-  `cli/src/cmd_web.ts` statically imports `@yurifrl/hub-web` (workspace dep of
+  `cli/src/commands/web.ts` statically imports `@yurifrl/hub-web` (workspace dep of
   the cli manifest) because docs/03 names `hub web` as the server's host and
   no middle package exists — the import is composition at the binary edge
   (adapters + startHubWeb), not business logic flowing cli→web; web still
@@ -113,8 +113,7 @@ pi-hub/
 │   └── src/
 │       ├── bin.ts             # runtime entry (a sanctioned default export); argv parsing, exit codes
 │       ├── commands/          # one module per verb: parse args → CommandRequest → render reply
-│       ├── render/            # ANSI painting of RenderBlocks using lib/theme.ts tokens
-│       └── screens/           # full-screen views: attention board, watch, pickers
+│       └── tui/               # OpenTUI surfaces: board rows, watch view, picker
 ├── web/                       # @yurifrl/hub-web — Hub Console; imports lib only
 │   ├── package.json
 │   └── src/

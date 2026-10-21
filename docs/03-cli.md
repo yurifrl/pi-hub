@@ -4,7 +4,7 @@ Spec of the `hub` binary — `@yurifrl/hub-cli`, sources under `cli/src/`. The C
 
 ## bin
 
-**Location and role.** `cli/src/bin.ts` is the composition root of `@yurifrl/hub-cli` (package `bin` field maps `hub` → `cli/src/bin.ts`, run with Bun). It parses argv, loads config, builds the commander program, wires one socket client and one file reader, and maps every failure to an exit code. Command bodies live in `cli/src/commands.ts`; all rendering lives in `cli/src/render/` (## Rendering). bin.ts contains no rendering and no domain logic.
+**Location and role.** `cli/src/bin.ts` is the composition root of `@yurifrl/hub-cli` (package `bin` field maps `hub` → `cli/src/bin.ts`, run with Bun). It parses argv, loads config, builds the commander program, and maps every failure to an exit code. Each subcommand lives in `cli/src/commands/<name>.ts` exporting a registrar; interactive rendering lives in `cli/src/tui/` (## Rendering). bin.ts contains no rendering and no domain logic.
 
 **Commander tree.**
 
@@ -192,7 +192,7 @@ Shared conventions:
 
 ## Rendering
 
-All rendering lives in `cli/src/render/`; commands never emit ANSI themselves — commands produce data, renderers produce frames.
+Interactive rendering lives in `cli/src/tui/`; one-shot output goes through `cli/src/paint.ts`. Commands never emit ANSI themselves — commands produce data, renderers produce frames.
 
 **Theme → ANSI.** `lib/theme.ts` is the single token definition (ownership in `01-architecture.md`); the CLI maps each token to escape sequences:
 
@@ -212,34 +212,16 @@ Fallback chain: truecolor → nearest 256-color cube entry → bold/plain. `--no
 
 **Re-render triggers.** EventBus push frames over the socket, every reply frame, the 2s fallback tick, and keypresses. Frames pass through the diffing buffer; a frame with zero diffs writes nothing.
 
-**Screen buffer — `cli/src/render/`.**
+**Interactive surfaces — `cli/src/tui/` on `@opentui/core`.** Board, `watch` and pickers are built on OpenTUI (Bun-native, no React). OpenTUI owns the cell buffer, diffing, alt-screen enter/leave, raw mode, key decoding and terminal restoration; the CLI owns layout and state.
 
-```types
-interface ScreenBuffer {
-  resize(cols: number, rows: number): void
-  write(cells: Cell[][]): void     // full frame in, diff computed
-  flush(): string                  // minimal ANSI: cursor moves + changed spans
-  enterAlt(): void
-  leaveAlt(): void
-}
+- `tui/rows.ts` — attention and session row layout: zone stack, focus slots, calm-variant collapse.
+- `tui/watch_view.ts` — `watch` rail and conversation view.
+- `tui/picker.ts` — fuzzy arrow picker shared by `send`, `assign`, `log`.
+- `tui/keys.ts` — key decoding to the logical keys the surfaces use (char, up, down, enter, escape, backspace, left, right, ctrl-c).
+- `tui/colors.ts`, `tui/footer.ts` — theme-token and session-hue colors; footer hints.
+- `paint.ts` — plain styled text for one-shot human output (no OpenTUI).
 
-type Cell = { ch: string; fg?: ThemeToken | Hue; bg?: ThemeToken; bold?: boolean }
-```
-
-- `screen.ts` — the buffer above: cell grid, diffing, flush, alt-screen enter/leave, cursor management. Owns every raw ANSI byte emitted by the CLI.
-- `board.ts` — board and watch attention-rail layout: zone stack, the focus model (ordered interactive slots), calm-variant collapse. Pure function: status snapshot + focus in → cells out.
-- `stream.ts` — log and summary lines: hue bars, kind glyphs, wrapping aligned to the text column, viewport scrolling with scrollback (full log view), pinned and filtered selection.
-- `inputs.ts` — key decoding and inline input state: raw-mode bytes → key events; per-slot editor (text, cursor, per-session answer history); focus movement.
-
-```types
-type Key =
-  | { kind: "char"; char: string }
-  | { kind: "up" | "down" | "enter" | "escape" | "backspace" | "left" | "right" }
-  | { kind: "ctrl-c" }
-  | { kind: "ignore" }
-```
-
-**Raw-mode single keypress.** While a board-family surface is open, stdin runs in raw mode; each read chunk decodes to at most one logical key — escape sequences are consumed atomically, unknown multi-byte sequences map to `{kind:"ignore"}` and never leak as garbage text. ctrl-c inside a surface arrives as a key (`q`-equivalent), not a signal. Non-TTY stdin skips raw mode entirely: keys disabled, render-only.
+**Raw-mode single keypress.** While a board-family surface is open, ctrl-c arrives as a key (`q`-equivalent), not a signal; unknown multi-byte sequences are ignored and never leak as text. Non-TTY stdin skips raw mode: keys disabled, render-only.
 
 **TTY degradation.**
 
