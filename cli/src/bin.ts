@@ -33,6 +33,7 @@ import {
   agentBody,
   tailsBody,
   pingBody,
+  sessionsBody,
 } from "./commands";
 import { KillDeclined } from "./cmd_kill";
 import { CliError } from "./cli_errors";
@@ -133,6 +134,7 @@ sub("web", "serve the Hub Console")
 sub("serve", "run a standalone hub on the socket (docs/07 §Run)").action(invoke(serveBody));
 
 sub("ping", "liveness probe: exit 0 hub live, 2 dead (docs/03 §Exit codes)").action(invoke(pingBody));
+sub("sessions", "machine-wide omp inventory: roster ∪ transcripts (docs/02 §Sessions op)").action(invoke(sessionsBody));
 
 // ---- boot ---------------------------------------------------------------
 

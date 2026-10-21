@@ -27,6 +27,7 @@ import { cmdTails } from "./cmd_tails";
 import { cmdWeb } from "./cmd_web";
 import { cmdServe } from "./cmd_serve";
 import { cmdPing } from "./cmd_ping";
+import { cmdSessions } from "./cmd_sessions";
 
 /** Commander grammar keeps `[id] <text...>` unsplit — the body owns the split. */
 export type MixedTail = { head: string | undefined; tail: string[] };
@@ -137,4 +138,8 @@ export const serveBody: CommandBody = async (ctx): Promise<void> => {
 
 export const pingBody: CommandBody = async (ctx): Promise<void> => {
   await cmdPing(ctx);
+};
+
+export const sessionsBody: CommandBody = async (ctx): Promise<void> => {
+  await cmdSessions(ctx);
 };
