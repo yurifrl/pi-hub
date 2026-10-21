@@ -442,6 +442,7 @@ deadline extends to 120s from first execution.
 | `answer` | `{ id, text }` | `{ item }` | delivers `text` to the item's session (send semantics), then resolves the item |
 | `assign` | `{ sessionId, task }` | `{ item }` | creates the pending assigned-work item (## Attention lifecycle) |
 | `agent` | `{}` | `{ started: true, name, adopted? }` | starts the hub's own agent through the watcher's supervised spawn path; adopts a live child instead of erroring when one already runs |
+| `sessions` | `{}` | `{ sessions: Row[], detached: id[] }` | machine-wide omp inventory (## Sessions op); roster rows keep their `SessionRecord` shape with `id` added, transcript-only peers arrive as `Row`s with `status:"detached"` |
 | `ping` | `{}` | `{ pong: true }` | side-effect-free liveness probe: one full dispatch round-trip proves socket, parser, and core; `hub ping` (03-cli) and `bridge/run` build on it |
 
 The `attention` op:
@@ -483,6 +484,26 @@ codes: `bad-frame`, `bad-version`, `unknown-op`, `forbidden`,
 (single-writer); concurrent cmds interleave and correlate by `cmdId`. A
 `kill` of a session with in-flight cmds fails those cmds with
 `no-session`.
+
+## Sessions op
+
+The `sessions` op (## Ops) answers one question: *what omp sessions exist
+on this machine right now* — including TUI sessions that predate the hub
+plugin and cannot report themselves. The plugin roster stays authoritative
+for sessions that report: a roster row wins by id verbatim.
+
+- **Scan** — `lib/adapters/omp_transcripts` walks
+  `~/.omp/agent/sessions/<dir>/<name>.jsonl` (the same tree `hub tails`
+  reads), reads each transcript's head (session id, title, model) and tail
+  (quiet-end), and yields one fact per transcript. Env override:
+  `OMP_HUB_SESSIONS_ROOT`. Per-file problems land in the reply's
+  `errors[]` — the op never fails because of one unreadable file.
+- **Stale rule** — a transcript untouched for 40 s (the same quiet window
+  `hub tails` uses) is exited: its id is listed under `detached` and gets
+  no row. Fresh transcript-only sessions get rows with `status:"detached"`,
+  `kind:"peer"`, `phase:"working"`, cwd decoded from the dir name.
+- **Errors** — a failed whole-tree scan surfaces `unavailable-hub`;
+  the roster (list op) remains the fallback snapshot.
 
 ## Attention lifecycle
 

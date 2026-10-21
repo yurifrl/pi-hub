@@ -71,7 +71,7 @@ def register(ctx):
         schema={
             "type": "object",
             "properties": {
-                "op": {"type": "string", "enum": ["list", "attention", "answer", "assign", "send", "tool", "spawn", "kill", "archive", "logTail", "summaries", "agent"]},
+                "op": {"type": "string", "enum": ["list", "attention", "answer", "assign", "send", "tool", "spawn", "kill", "archive", "logTail", "summaries", "agent", "sessions"]},
             },
             "required": ["op"],
         },

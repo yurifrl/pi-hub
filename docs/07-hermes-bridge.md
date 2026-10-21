@@ -50,7 +50,7 @@ Two injection points, registered by `bridge/hermes-hub-plugin/`:
 
 - **`hub` tool** — one-shot op per call: `list`, `attention`, `answer`,
   `assign`, `send`, `tool`, `spawn`, `kill`, `archive`, `logTail`,
-  `summaries`, `agent`. Reply is the hub's JSON frame verbatim.
+  `summaries`, `agent`, `sessions`. Reply is the hub's JSON frame verbatim.
 - **`pre_llm_call` hook** — every turn injects a `<hub-status>` digest:
   open attention items + first three sessions, so Hermes knows the board
   state without being asked.

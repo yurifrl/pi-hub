@@ -23,6 +23,7 @@ hub
 ├─ watch                         full-screen split console
 ├─ agent [--surface S]           start the hub agent
 ├─ ping                          side-effect-free liveness probe (exit 0 live / 2 dead)
+├─ sessions                      machine-wide omp inventory (roster ∪ transcripts)
 └─ web [--port P]                serve the Hub Console
 ```
 
@@ -183,6 +184,11 @@ Shared conventions:
 - Turn semantics: `session_start` on discovery; `user_message` / `assistant_message` / `tool_call` per transcript line; `agent_end` when a transcript goes quiet `40s` after activity (re-arms on the next line). Ended sessions are not re-announced after a hub restart.
 - Human: `tails: watching <dir> → <sock> (quiet-end 40s)`; runs foreground, ctrl-c exits 0. Hub down at boot or mid-run is a retry loop (`hub unreachable — retrying every 2s`), never an exit.
 - `--json` / `--ndjson` → usage, exit 1: a bridge has no snapshot semantics.
+
+**`hub sessions`** — machine-wide omp inventory (docs/02 §Sessions op): the roster (`hub list` shape) merged with every omp transcript on the machine the plugin never reported. Cmd frame `sessions {}`.
+- Human: rows `id · title · cwd · model · status`; transcript-only peers show `detached`; ids whose transcripts went quiet 40 s print under a muted `detached (quiet)` tail instead of a row.
+- `--json` / `--ndjson`: `{type:"snapshot", data:{sessions, detached}}` — rows verbatim from the op reply; `errors[]` renders as muted warnings on stderr in human mode.
+- Errors: hub unreachable → 2; scan failed on the hub → reply error envelope, exit 2 (roster-only fallback is the hub's concern, not the CLI's).
 
 ## Rendering
 

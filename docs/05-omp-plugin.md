@@ -88,7 +88,7 @@ All nine tools are registered in every non-brain session via `pi.registerTool({ 
 ← {"kind":"reply","cmdId":"c7","ok":true,"text":"delivered; no reply requested"}
 ```
 
-Timeouts are per-tool (stated inline in each tool's Routing line). Every timeout resolves `{ok:false}` with the timeout text — tools never throw. Ops: `list`, `send`, `tool`, `spawn`, `kill`, `archive`, `attention`, `answer`, `assign`.
+Timeouts are per-tool (stated inline in each tool's Routing line). Every timeout resolves `{ok:false}` with the timeout text — tools never throw. Ops: `list`, `send`, `tool`, `spawn`, `kill`, `archive`, `attention`, `answer`, `assign`, `sessions`.
 
 ### hub_list_sessions
 
@@ -100,6 +100,11 @@ Description (registered): "List all live OMP sessions on the hub plus its RPC wo
 ```
 
 Routing: hub-local → render the `StatusStore` snapshot (roster: id, title, phase, description, lastActivity, kind). Peer relay → op `list`. Timeout 10s.
+
+**Machine-wide variant** — the `sessions` op (docs/02 §Sessions op)
+extends this with omp transcripts the plugin never saw: TUI sessions
+started before the plugin loaded. Reply `{ sessions, detached, errors }`;
+roster rows win by id.
 
 ### hub_send_message
 
@@ -293,6 +298,7 @@ Reporter side: on its own `session_shutdown` the reporter makes one best-effort 
 | `OMP_HUB_BRAIN` | unset | extension factory | `1` → early-return guard: this process is a driven child (brain/worker) and contributes RPC answers only |
 | `OMP_HUB_MODEL` | unset | `/hub-start`, `/hub-agent`, `hub_spawn_worker` | default model spec for spawned children |
 | `OMP_BIN` | `omp` | `AgentRuntime` callers | binary spawned for brain, workers, and the hub agent |
+| `OMP_HUB_SESSIONS_ROOT` | `~/.omp/agent/sessions` | hub (`sessions` op) | machine-wide omp transcript root scanned for the sessions op (docs/02 §Sessions op); same tree `hub tails` reads |
 | `OMP_HUB_AGENT` | unset | extension factory | `1` → this session IS the hub agent: its frames are marked `kind:"agent"` and excluded from attention/summarize loops |
 
 ## Anti-recursion
