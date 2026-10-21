@@ -1,6 +1,6 @@
 // extensions/hub_sock.ts — the widget's hub.sock subscription feed (docs/05
 // §Widget: data source is the hub.sock subscription; docs/02 §Event frames is
-// the wire contract). Mirrors cli/src/hub_events.ts's client-side pattern —
+// the wire contract). Mirrors the CLI's hub.sock client-side pattern —
 // hello with subscribe:true → unsolicited ch:"event" frames → raw frames to
 // the caller — kept local because extensions cannot import the cli package
 // (docs/01 §Import matrix); the frame decode itself lives in widget.ts so it
