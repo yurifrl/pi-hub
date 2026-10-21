@@ -21,6 +21,13 @@ import { mutedRow } from "./log_render";
 import { renderRow } from "./log_render";
 import { makeLogFollower, nodeFollowIo } from "./log_follow";
 import { readKeys } from "./render/inputs";
+import { normalizeLogEntry } from "./log_entry";
+import { tailTranscript, translate } from "./cmd_tails";
+import { createOmpTranscriptStore } from "@yurifrl/hub/adapters/omp_transcripts";
+import { join } from "node:path";
+import { homedir } from "node:os";
+
+const SESSIONS_ROOT = join(homedir(), ".omp", "agent", "sessions");
 import {
   applyEvent,
   applyKey,
@@ -37,6 +44,47 @@ import {
 
 const FALLBACK_TICK_MS = 2000; // docs/03 §Refresh fallback tick
 const LOG_TICK_MS = 250;
+
+/**
+ * The chat of a session with no hub log file (a transcript-only omp session):
+ * the newest transcript lines translated the same way `hub tails` does it
+ * (cli/src/cmd_tails.ts translate), newest last. Missing or quiet transcripts
+ * yield an empty conversation — the rail row stays.
+ */
+const transcriptEntries = (id: string): LogEntry[] => {
+  const out: LogEntry[] = [];
+  for (const line of tailTranscript(id, 200)) {
+    for (const frame of translate(line)) {
+      const kind = typeof frame.frame === "string" ? frame.frame : "";
+      const text =
+        typeof frame.text === "string"
+          ? frame.text
+          : kind === "tool_call"
+            ? `${String(frame.tool ?? "")} ${JSON.stringify(frame.args ?? {})}`
+            : "";
+      const e = normalizeLogEntry({ t: Date.now(), sessionId: id, kind, text });
+      if (e !== null) out.push(e);
+    }
+  }
+  return out;
+};
+
+/** Display names for rail rows, from the machine's omp transcript tree — the
+ * same scan op "sessions" serves (docs/02 §sessions). Titles live in the
+ * transcript head; the id prefix is the fallback. Best effort: failures leave
+ * ids in the rail. */
+const transcriptNames = async (): Promise<Record<string, string>> => {
+  const out: Record<string, string> = {};
+  const res = await createOmpTranscriptStore(SESSIONS_ROOT).scan();
+  if (!res.ok) return out;
+  for (const f of res.value.facts) {
+    // No real title → factFromHead echoes the transcript filename
+    // ("2026-10-20T…_<id>"); that is not a name, keep the id prefix instead.
+    if (f.title.trim() === "" || /^\d{4}-\d{2}-\d{2}T/.test(f.title)) continue;
+    out[f.sessionId] = f.title;
+  }
+  return out;
+};
 
 export const cmdWatch = async (ctx: CommandContext): Promise<void> => {
   // machine modes: static snapshot (attention items + last 50 log lines),
@@ -63,8 +111,9 @@ export const cmdWatch = async (ctx: CommandContext): Promise<void> => {
 
   // piped stdout → one static frame + muted hint, exit 0 (docs/03 §TTY degradation)
   if (!stdoutIsTty) {
+    const names = await transcriptNames();
     return emitResult(() => {
-      const extra = railExtras(status, ctx.files.recentLogIds(MAX_EXTRAS));
+      const extra = railExtras(status, ctx.files.recentLogIds(MAX_EXTRAS), names);
       let s = initialWatchState(status, extra);
       for (const id of railIds(status, extra)) s = mergeEntries(s, id, ctx.files.logEntries(id), false);
       for (const line of plainSnapshot(s, 100)) ctx.io.stdout.write(line + "\n");
@@ -109,7 +158,7 @@ const runWatchScreen = async (ctx: CommandContext, status0: StatusFile | null): 
     (on) => stdin.setRawMode?.(on),
   );
 
-  const extras0 = railExtras(status0, ctx.files.recentLogIds(MAX_EXTRAS));
+  const extras0 = railExtras(status0, ctx.files.recentLogIds(MAX_EXTRAS), await transcriptNames());
   let state = initialWatchState(status0, extras0);
   let view: ViewMetrics = { pageRows: 10, maxScroll: 0 };
   let quit = false;
@@ -189,9 +238,12 @@ const runWatchScreen = async (ctx: CommandContext, status0: StatusFile | null): 
         ...(data.agentSession !== undefined ? { agentSession: data.agentSession } : {}),
       };
       // Session set changed → re-scan archived + recent log files so new omp
-      // sessions appear in the rail (docs/03 §watch rail).
+      // sessions appear in the rail (docs/03 §watch rail), labeled from the
+      // transcript tree.
       const extras =
-        status.digest !== state.orientation ? railExtras(status, ctx.files.recentLogIds(MAX_EXTRAS)) : state.extras;
+        status.digest !== state.orientation
+          ? railExtras(status, ctx.files.recentLogIds(MAX_EXTRAS), await transcriptNames())
+          : state.extras;
       state = { ...state, offline: false, orientation: data.digest, status, extras };
     } else {
       state = { ...state, offline: true };
@@ -215,7 +267,11 @@ const runWatchScreen = async (ctx: CommandContext, status0: StatusFile | null): 
     const selected = state.selected;
     if (selected !== null && state.entries[selected] === undefined && !followers.has(selected) &&
         state.status?.sessions[selected] === undefined) {
-      next = mergeEntries(next, selected, ctx.files.logEntries(selected), false);
+      // Archived + log-only: hub log first; sessions that never got one (the
+      // hub was down) fall back to their omp transcript, translated the same
+      // way `hub tails` does it (docs/03 §watch chat).
+      const fromLog = ctx.files.logEntries(selected);
+      next = mergeEntries(next, selected, fromLog.length > 0 ? fromLog : transcriptEntries(selected), false);
     }
     for (const id of railIds(state.status)) {
       let f = followers.get(id);

@@ -17,6 +17,11 @@ import type { AttentionItem, LogEntry, SessionRecord, StatusFile, ThemeToken } f
 import type { FeedEvent } from "../hub_events";
 import type { Key } from "../render/inputs";
 
+/** Rail width bounds (docs/03 §watch layout): `<`/`>` shrink/grow between them. */
+export const RAIL_MIN = 14;
+export const RAIL_MAX = 60;
+export const RAIL_DEFAULT = 24;
+
 export type WatchFocus = "rail" | "compose";
 
 /** Transient footer line: send result or a refused command. */
@@ -42,6 +47,8 @@ export type WatchState = {
   filter: ChatFilter;
   /** hub connection lost */
   offline: boolean;
+  /** rail column width in cells; < / > resize between RAIL_MIN and RAIL_MAX */
+  railWidth: number;
   orientation: string | undefined;
   notice: Notice | null;
 };
@@ -51,8 +58,10 @@ export type ViewMetrics = { pageRows: number; maxScroll: number };
 
 export const MAX_ENTRIES = 400;
 
-/** One rail row outside the live sessions map: a closed (archived) or log-only session. */
-export type RailExtra = { id: string; phase: "closed" | "log" };
+/** One rail row outside the live sessions map: a closed (archived) or log-only session.
+ * `name` is the display label — the omp transcript title (or cwd basename); the
+ * host resolves it from the machine's transcript tree, not the hub roster. */
+export type RailExtra = { id: string; phase: "closed" | "log"; name: string };
 
 /** Chat message-kind filter (docs/03 §watch chat): f cycles. */
 export type ChatFilter = "all" | "user" | "assistant" | "tool";
@@ -85,13 +94,20 @@ export const railIds = (status: StatusFile | null, extra: RailExtra[] = []): str
 /**
  * Archived + log-only rail extras from status `archived[]` and the most
  * recent log files, newest first (docs/03 §watch rail). The host computes
- * recentLogIds; here we just merge and order.
+ * recentLogIds; here we just merge, order, and label: the `names` map (from
+ * the transcript scan) supplies each row's display name, falling back to the
+ * id prefix.
  */
-export const railExtras = (status: StatusFile | null, recentLogIds: string[]): RailExtra[] => {
-  const archived = (status?.archived ?? []).map((a) => ({ id: a.id, phase: "closed" as const }));
+export const railExtras = (status: StatusFile | null, recentLogIds: string[], names: Record<string, string> = {}): RailExtra[] => {
+  const label = (id: string): string => (names[id] !== undefined && names[id] !== "" ? names[id] : id.slice(0, 8));
+  const archived = (status?.archived ?? []).map((a) => ({ id: a.id, phase: "closed" as const, name: label(a.id) }));
   const known = new Set([...(status === null ? [] : Object.keys(status.sessions)), ...archived.map((a) => a.id)]);
-  const seen = new Set(archived.map((a) => a.id));
-  const logs = recentLogIds.filter((id) => !known.has(id) && !seen.has(id) && seen.add(id)).map((id) => ({ id, phase: "log" as const }));
+  const logs: RailExtra[] = [];
+  for (const id of recentLogIds) {
+    if (known.has(id)) continue;
+    known.add(id);
+    logs.push({ id, phase: "log" as const, name: label(id) });
+  }
   return [...archived, ...logs];
 };
 
@@ -116,6 +132,7 @@ export const initialWatchState = (status: StatusFile | null, extra: RailExtra[] 
       extras: extra,
       filter: "all",
       offline: false,
+      railWidth: RAIL_DEFAULT,
       orientation: status?.digest,
       notice: null,
     },
@@ -140,10 +157,10 @@ export const sessionName = (id: string, rec: SessionRecord | undefined): string 
 /**
  * The rail symbol: needs-you wins; otherwise the phase — one icon per state,
  * never color alone (docs/03 §watch rail): working ▶, waiting ?, idle ○,
- * done ✓, blocked ✖; archived ⌛, log-only ◌, closing ·.
+ * done ✓, blocked ✖; archived ■, log-only □, closing ·.
  */
 export const sessionGlyph = (rec: SessionRecord | undefined, needsYou: boolean): { glyph: string; token: ThemeToken } => {
-  if (rec === undefined) return { glyph: "◌", token: "muted" };
+  if (rec === undefined) return { glyph: "□", token: "muted" };
   if (rec.status === "closing") return { glyph: "·", token: "muted" };
   if (needsYou) return { glyph: "⚠", token: "warn" };
   switch (rec.phase) {
@@ -211,7 +228,7 @@ export type KeyAction =
   | { type: "dismiss"; itemId: string; state: WatchState };
 
 const moveSelection = (s: WatchState, delta: 1 | -1): WatchState => {
-  const ids = railIds(s.status);
+  const ids = railIds(s.status, s.extras);
   if (ids.length === 0) return s;
   const at = s.selected === null ? -1 : ids.indexOf(s.selected);
   const next = Math.min(ids.length - 1, Math.max(0, at + delta));
@@ -250,6 +267,8 @@ export const applyKey = (prev: WatchState, key: Key, view: ViewMetrics): KeyActi
         return { type: "state", state: id === undefined ? s : selectSession(s, id) };
       }
       if (key.char === "f") return { type: "state", state: { ...s, filter: cycleFilter(s.filter), scroll: 0 } };
+      if (key.char === "<") return { type: "state", state: { ...s, railWidth: Math.max(RAIL_MIN, s.railWidth - 4) } };
+      if (key.char === ">") return { type: "state", state: { ...s, railWidth: Math.min(RAIL_MAX, s.railWidth + 4) } };
       if (key.char === "d") return dismissSelected(s);
       return { type: "state", state: s };
     }

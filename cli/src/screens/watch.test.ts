@@ -15,6 +15,9 @@ import {
   railIds,
   sessionGlyph,
   sessionName,
+  RAIL_DEFAULT,
+  RAIL_MIN,
+  RAIL_MAX,
   type KeyAction,
   type ViewMetrics,
   type WatchState,
@@ -101,6 +104,36 @@ describe("selection", () => {
     const s = initialWatchState(status());
     expect(press(s, ch("2")).state.selected).toBe("s-betaaaaaaaaaa");
     expect(press(s, ch("9")).state.selected).toBe("s-alpha12345678");
+  });
+
+  it("down reaches extras; archived and log-only are selectable", () => {
+    const s = initialWatchState(status(), [
+      { id: "01a15b1e-aaaa", phase: "closed", name: "DOCKER: Add hub op" },
+      { id: "01a15c2d-bbbb", phase: "log", name: "make a new release" },
+    ]);
+    const down = (n: number): WatchState => {
+      let x = s;
+      for (let i = 0; i < n; i++) x = press(x, key("down")).state;
+      return x;
+    };
+    expect(down(2).selected).toBe("s-gamma"); // 3 live sessions, selection starts on the first
+    expect(down(3).selected).toBe("01a15b1e-aaaa"); // then extras
+    expect(down(4).selected).toBe("01a15c2d-bbbb");
+    const withExtras = initialWatchState(status(), s.extras);
+    expect(withExtras.selected).toBe("s-alpha12345678"); // still opens on the first live session
+    expect(down(99).selected).toBe("01a15c2d-bbbb"); // clamped
+    expect(press(initialWatchState(status(), withExtras.extras), ch("4")).state.selected).toBe("01a15b1e-aaaa");
+  });
+
+  it("< / > resize the rail within bounds", () => {
+    let s = initialWatchState(status());
+    expect(s.railWidth).toBe(RAIL_DEFAULT);
+    s = press(s, ch("<"), ch("<")).state;
+    expect(s.railWidth).toBe(RAIL_DEFAULT - 8);
+    s = press(s, ch(">"), ch(">"), ch(">")).state;
+    expect(s.railWidth).toBe(Math.min(RAIL_MAX, RAIL_DEFAULT + 4));
+    s = press(s, ch("<")).state;
+    expect(press(s, ch("<"), ch("<"), ch("<"), ch("<")).state.railWidth).toBe(RAIL_MIN);
   });
 
   it("selection survives its session leaving the map by falling to the first", () => {
@@ -349,5 +382,23 @@ describe("chatLines tool/system rows", () => {
   it("empty system rows are dropped", () => {
     const lines = flat(chatLines([entry({ kind: "session_start", text: "  " }), entry({ kind: "agent_end", text: "" })], "alpha", 0, 40));
     expect(lines).toHaveLength(0);
+  });
+
+  it("filter narrows to one message kind", () => {
+    const rows = [
+      entry({ kind: "user_message", text: "ping" }),
+      entry({ kind: "assistant_message", text: "pong" }),
+      entry({ text: 'bash {"command":"ls"}' }),
+    ];
+    expect(flat(chatLines(rows, "alpha", 0, 40, "user"))).toHaveLength(2); // header + body
+    expect(flat(chatLines(rows, "alpha", 0, 40, "tool"))).toHaveLength(1);
+    expect(flat(chatLines(rows, "alpha", 0, 40, "assistant"))).toHaveLength(2);
+  });
+
+  it("adjacent identical tool rows collapse with a ×N count", () => {
+    const dup = [entry({ text: 'edit {"path":"a.yaml"}' }), entry({ text: 'edit {"path":"a.yaml"}' }), entry({ text: 'edit {"path":"a.yaml"}' })];
+    const lines = flat(chatLines(dup, "alpha", 0, 40));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("×3");
   });
 });

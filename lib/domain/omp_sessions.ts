@@ -45,6 +45,8 @@ export type OmpSessionsResult = {
 export type TranscriptLine = {
   type?: string;
   customType?: string;
+  /** "title" lines carry the session title; "session" lines repeat it */
+  title?: string;
   data?: Record<string, unknown>;
   /** model_change lines carry the model id */
   model?: string;
@@ -68,12 +70,24 @@ export const clip = (s: string, n = 160): string => {
 /** sessionId = trailing UUID of the transcript filename "…_<uuid>.jsonl". */
 export const idFromName = (name: string): string => {
   const m = /_([0-9a-f-]{36})\.jsonl$/.exec(name);
-  return m ? m[1] : name.replace(/\.jsonl$/, "");
+  return m ? m[1]! : name.replace(/\.jsonl$/, "");
 };
 
 /** cwd from the session directory name: omp flattens paths with "-" and
  * strips the leading slash ("-Users-yuri-.omp-wt-…" → /Users/yuri/.omp/wt/…). */
 export const cwdFromDir = (dir: string): string => dir.replace(/^-/, "/").replace(/-/g, "/");
+
+/** The transcript's own declared title: the newest "title"/"session" line's
+ * `title` field (auto-titles update in place), trimmed; "" when absent. */
+export const declaredTitle = (lines: TranscriptLine[]): string => {
+  let title = "";
+  for (const line of lines) {
+    if ((line.type === "title" || line.type === "session") && typeof line.title === "string" && line.title.trim() !== "") {
+      title = line.title.trim();
+    }
+  }
+  return title;
+};
 
 /** The first user message as title material (SessionRecord.title semantics). */
 export const firstUserText = (lines: TranscriptLine[]): string => {
@@ -147,7 +161,10 @@ export const factFromHead = (blob: TranscriptBlob): OmpSessionFact => {
   return {
     sessionId: idFromName(blob.file.name),
     cwd: cwdFromDir(blob.file.dir),
-    title: clip(firstUserText(headLines) || blob.file.name.replace(/\.jsonl$/, ""), 80),
+    // Title precedence (docs/02 §sessions): the transcript's declared title
+    // ("title"/"session" lines), else the first user message — the filename
+    // fallback is last so an untitled session still shows something stable.
+    title: clip(declaredTitle(headLines) || firstUserText(headLines) || blob.file.name.replace(/\.jsonl$/, ""), 80),
     model: modelFromLines([...headLines, ...tailLines]),
     lastActivityMs: blob.file.mtimeMs,
     saidBye: hasFarewell([...headLines, ...tailLines]),

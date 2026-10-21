@@ -18,7 +18,6 @@ import {
 import type { Cell, ThemeTokenOrHue } from "./screen";
 import { clockOf, wrapText } from "./stream";
 import { hueIndex } from "./theme";
-
 type Seg = [text: string, fg?: ThemeTokenOrHue, bold?: boolean];
 
 const cellsOf = (segs: Seg[]): Cell[] => {
@@ -39,8 +38,7 @@ const clip = (text: string, width: number): string => {
   return chars.length <= width ? flat : `${chars.slice(0, Math.max(0, width - 1)).join("")}…`;
 };
 
-/** Rail column width: a quarter of the terminal, bounded so names stay legible. */
-export const railWidth = (cols: number): number => Math.min(28, Math.max(14, Math.floor(cols / 4)));
+/** Rail width is state (docs/03 §watch layout): the painter reads `s.railWidth`. */
 
 const wrapLines = (text: string, width: number): string[] =>
   text.split("\n").flatMap((line) => wrapText(line.replace(/\t/g, "  "), width));
@@ -120,9 +118,11 @@ export const chatLines = (entries: LogEntry[], who: string, hue: number, width: 
   return out;
 };
 
-/** Row icon for an archived (⌛) or log-only (◌) rail extra, never color alone. */
+/** Row icon for an archived (■) or log-only (□) rail extra, never color alone.
+ * Plain geometric glyphs — ⌛/◌ hit emoji/combining fallback fonts in real
+ * terminals and render as tofu blobs (docs/03 §watch rail). */
 export const extraGlyph = (phase: RailExtra["phase"]): { glyph: string; token: ThemeTokenOrHue } =>
-  phase === "closed" ? { glyph: "⌛", token: "muted" } : { glyph: "◌", token: "muted" };
+  phase === "closed" ? { glyph: "■", token: "muted" } : { glyph: "□", token: "muted" };
 
 export type WatchView = { rows: Cell[][]; view: ViewMetrics };
 
@@ -131,7 +131,7 @@ export const paintWatchView = (s: WatchState, cols: number, rows: number, now: n
   const ids = railIds(s.status, s.extras);
   const sessions = s.status?.sessions ?? {};
   const needYou = (s.status?.attention ?? []).filter((a) => a.resolvedAt === undefined).length;
-  const rw = railWidth(cols);
+  const rw = s.railWidth;
   const cw = Math.max(1, cols - rw - 1); // chat column, after the `│` divider
   const bodyRows = Math.max(1, rows - 4); // header + title + compose + footer around the body
 
@@ -152,7 +152,8 @@ export const paintWatchView = (s: WatchState, cols: number, rows: number, now: n
     const unread = s.unread[id] ?? 0;
     const badge = unread > 0 ? ` +${unread > 99 ? "99" : unread}` : "";
     const nameW = Math.max(1, rw - 4 - Array.from(badge).length);
-    const name = clip(sessionName(id, rec), nameW);
+    const label = rec !== undefined ? sessionName(id, rec) : (s.extras.find((e) => e.id === id)?.name ?? id.slice(0, 8));
+    const name = clip(label, nameW);
     const pad = " ".repeat(Math.max(0, nameW - Array.from(name).length));
     void i;
     rail.push(cellsOf([[sel ? "▸" : " ", "accent", true], [glyph, token, true], [" "], [name + pad, rec === undefined ? "muted" : hueIndex(id), sel], [badge, "accent", true]]));
@@ -171,7 +172,7 @@ export const paintWatchView = (s: WatchState, cols: number, rows: number, now: n
             ...[rec.model, clip(rec.title, 40)].filter((t) => t.trim() !== "").map((t): Seg => [` · ${t}`, "muted"]),
           ]
         : extra !== undefined
-          ? [[` ${sessionName(s.selected, undefined)} · ${extra.phase === "closed" ? "archived" : "log-only"}`, "muted"]]
+          ? [[` ${extra.name !== "" ? extra.name : s.selected.slice(0, 8)} · ${extra.phase === "closed" ? "archived" : "log-only"}`, "muted"]]
           : [[" waiting for sessions…", "muted"]];
   const all =
     s.selected === null

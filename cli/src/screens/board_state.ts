@@ -200,6 +200,10 @@ export const applyKey = (state: BoardState, key: Key): { state: BoardState; effe
 
     case "ignore":
       return { state, effect: null };
+
+    default:
+      // tab / pageup / pagedown have no board meaning — inert
+      return { state, effect: null };
   }
 };
 

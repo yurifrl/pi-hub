@@ -6,7 +6,7 @@
 // OmpSessionFacts; the roster merge is the caller's (hub_core owns the hub
 // session map — docs/02 §sessions).
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { closeSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { hubError } from "../domain/command";
 import type { HubError, Result } from "../domain/command";
 import type { OmpTranscriptStore } from "../ports/omp_transcripts";
@@ -16,12 +16,21 @@ import { factFromHead } from "../domain/omp_sessions";
 const HEAD_BYTES = 8 * 1024; // session/title/model_change live in the first lines
 const TAIL_BYTES = 4 * 1024; // farewell lines live at the end
 
-/** One raw transcript read: head bytes + tail bytes, per the domain contract. */
+/** One raw transcript read: head bytes + tail bytes, per the domain contract.
+ * Open descriptor + bounded reads — transcripts grow to tens of MB, so a
+ * whole-file readFileSync made the scan walk every byte of the machine's tree. */
 const readBlob = (path: string, size: number): { head: string; tail: string } => {
-  const buf = readFileSync(path);
-  const head = buf.subarray(0, Math.min(HEAD_BYTES, buf.length)).toString("utf8");
-  const tail = buf.length > TAIL_BYTES ? buf.subarray(Math.max(0, buf.length - TAIL_BYTES)).toString("utf8") : "";
-  return { head, tail };
+  const fd = openSync(path, "r");
+  try {
+    const headBuf = Buffer.alloc(Math.min(HEAD_BYTES, size));
+    readSync(fd, headBuf, 0, headBuf.length, 0);
+    const tailStart = Math.max(0, size - TAIL_BYTES);
+    const tailBuf = Buffer.alloc(Math.min(TAIL_BYTES, size - tailStart));
+    readSync(fd, tailBuf, 0, tailBuf.length, tailStart);
+    return { head: headBuf.toString("utf8"), tail: tailBuf.toString("utf8") };
+  } finally {
+    closeSync(fd);
+  }
 };
 
 /** Every transcript file under the root: one readdir per session dir, one stat

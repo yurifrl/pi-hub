@@ -24,7 +24,7 @@
 // Lifecycle: foreground like `hub web`; ctrl-c exits 0. `--json`/`--ndjson`
 // → usage 1 (a tail has no snapshot semantics). hub.sock down → exit 2.
 
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -45,8 +45,9 @@ const STATE_VERSION = 1;
 
 /** One reporter frame per transcript line; [] when the line carries no signal.
  * Same mapping the plugin reporter uses (docs/05 §Reporter table), derived
- * from the transcript instead of live extension events. */
-const translate = (line: TranscriptLine): Array<Record<string, unknown>> => {
+ * from the transcript instead of live extension events. Exported for `hub
+ * watch` (transcript-only chat fallback). */
+export const translate = (line: TranscriptLine): Array<Record<string, unknown>> => {
   const msg = line.message;
   const role = msg?.role;
   if (line.type === "message" && role === "user") {
@@ -85,6 +86,48 @@ type TailsState = { version: number; sessions: Record<string, SessionState> };
 
 /** One file scan per tick; entries are stat metadata per transcript file. */
 type ScanEntry = { key: string; path: string; dir: string; name: string; mtimeMs: number; size: number };
+
+/** The newest transcript lines for one session id, newest last, capped (docs/03
+ * §watch chat fallback: sessions with no hub log still show their chat).
+ * Exported for `hub watch`; unused lines (quiet transcripts) return []. */
+export const tailTranscript = (sessionId: string, cap: number): TranscriptLine[] => {
+  let dirs: string[];
+  try {
+    dirs = readdirSync(SESSIONS_DIR);
+  } catch {
+    return [];
+  }
+  for (const dir of dirs) {
+    const dirPath = join(SESSIONS_DIR, dir);
+    let names: string[];
+    try {
+      names = readdirSync(dirPath);
+    } catch {
+      continue;
+    }
+    const name = names.find((n) => n.endsWith(".jsonl") && n.includes(sessionId));
+    if (name === undefined) continue;
+    const path = join(dirPath, name);
+    try {
+      const size = statSync(path).size;
+      const start = Math.max(0, size - TAIL_BYTES);
+      const buf = readFileSync(path).subarray(start).toString("utf8");
+      const lines: TranscriptLine[] = [];
+      for (const raw of buf.split("\n")) {
+        if (!raw) continue;
+        try {
+          lines.push(JSON.parse(raw) as TranscriptLine);
+        } catch {
+          /* skip unparseable line */
+        }
+      }
+      return lines.slice(Math.max(0, lines.length - cap));
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
 
 const loadState = async (path: string): Promise<TailsState> => {
   try {
@@ -155,7 +198,9 @@ export const cmdTails = async (ctx: CommandContext): Promise<void> => {
   let cli: HubClient | null = null;
   let closing = false;
 
-  const write = (line: string): void => ctx.io.stdout.write(`${line}\n`);
+  const write = (line: string): void => {
+    ctx.io.stdout.write(`${line}\n`);
+  };
 
   const wire = (client: HubClient): void => {
     client.onClose(() => {

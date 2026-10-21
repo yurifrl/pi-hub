@@ -338,7 +338,7 @@ describe("hub_core — sessions op (docs/02 §sessions)", () => {
     });
 
     it("merges roster rows over facts and surfaces unknown fresh transcripts as detached", async () => {
-        const { core, statusFile } = makeCore({ ompSessions: scannerOf([fact("s-hub", 999_000), fact("s-fresh", 999_000), fact("s-stale", 0)]) });
+        const { core } = makeCore({ ompSessions: scannerOf([fact("s-hub", 999_000), fact("s-fresh", 999_000), fact("s-stale", 0)]) });
         await seedSession(core, "s-hub");
 
         const res = await core.surface.dispatch({ cmdId: "c1", op: "sessions", args: {}, by: "cli" });

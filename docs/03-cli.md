@@ -154,8 +154,8 @@ Shared conventions:
 - Close human: `✓ archived <id>`; `--json`: `{type:"snapshot", data:{archived:true, id, path}}`.
 - Errors: close → as `kill`; unreadable archive dir → 1 with the path in the message.
 
-**`hub watch`** — the full-screen chat console (alt-screen): **sessions rail on the left, the selected session's conversation on the right**, a compose row and a key/notice footer below (sketch 3). The rail lists every session with a state glyph (`✓` idle/working, `⚠` needs you, `✗` errored), its name and an unread count for sessions you are not looking at. The chat shows user/assistant messages as `time who` headers with indented bodies; tool calls are one muted `▶ tool arg` line each; empty system rows are dropped. An open attention item for the selected session is pinned above the compose row.
-- Keys: `↑↓`/`Tab` select a session, `1-9` jump to the nth, `⏎` focus the compose row, `PgUp`/`PgDn` scroll the chat, `d` dismiss the selected session's open attention item, `q`/`ctrl-c` quit (in compose: `esc` returns to the rail). Typing in compose edits a draft with `←/→/⌫`; `⏎` on a non-empty draft sends it — as the **answer** to the session's open attention item when there is one, otherwise as a plain message to the session.
+**`hub watch`** — the full-screen chat console (alt-screen): **a resizable sessions rail on the left, the selected session's conversation on the right**, a compose row and a key/notice footer below (sketch 3). The rail lists **every session on the machine** — the hub roster first (`⚠` needs you, `▶` working, `?` waiting, `○` idle, `✖` blocked, `·` closing), then archived (`■`) and log-only (`□`) extras, newest first, capped at the 200 most recent log files. Names come from each session's omp transcript title, falling back to the cwd basename, then the id prefix. The chat shows user/assistant messages as `time who` headers with indented bodies; tool calls are one muted `▶ tool arg` line each — adjacent identical rows (tool retries) collapse to `×N`; empty system rows are dropped. An open attention item for the selected session is pinned above the compose row. Extras are read-only: hub log first, and sessions that never got one (the hub was down) fall back to their translated omp transcript.
+- Keys: `↑↓`/`Tab` select a session (extras included), `1-9` jump to the nth, `⏎` focus the compose row, `PgUp`/`PgDn` scroll the chat, `f` cycles the chat filter `all → user → assistant → tool`, `<`/`>` shrink/grow the rail between 14 and 60 cells, `d` dismiss the selected session's open attention item, `q`/`ctrl-c` quit (in compose: `esc` returns to the rail). Typing in compose edits a draft with `←/→/⌫`; `⏎` on a non-empty draft sends it — as the **answer** to the session's open attention item when there is one, otherwise as a plain message to the session.
 - Machine modes: static snapshot (selected session's last chat lines + attention items), no alt-screen.
 - Errors: hub unreachable while open is a rendered state, not a crash — the header shows `(hub offline)` muted, the chat keeps working from `logs/*.jsonl`; exit happens only on `q`.
 - **Decision:** `watch` degrades instead of failing on hub loss. **Why:** it is a viewer; killing the console because the hub restarted would destroy the operator's context. **Contract:** a send or answer attempted while offline produces an inline `err` notice in the footer, never a process exit.
@@ -330,15 +330,16 @@ Hue bars `▎` are two cells wide, colored per session (plain here). The cursor 
 **3 — watch chat** (`hub watch`):
 
 ```text
- hub watch · 5 sessions · 1 need you
- sessions        │ tilt · working · opus · canary rollout
-▸⚠ tilt          │14:02:11 tilt
- ✓ web-1      2  │  I'll run the canary tests first.
- ✓ docs          │  ▶ bash bun test deploy/canary.test.ts
-                 │  ▶ edit deploy/canary.sh
-                 │ ⚠ approve deploy canary 2/3?
+ hub watch · 200 sessions · 1 need you
+ sessions               │ systems · idle · 01a14c9d
+▸○ systems              │  ▶ bash helm unittest k8s/charts/ax 2>&1 | grep -… ×2
+ ○ hub                  │21:35:15 ◆ systems
+ ○ DotFiles             │  Ground truth established: upstream publishes no
+ ⚠ DotFiles           +3│  images for either image — the manifest pinned
+ ■ 󰕮 ADMIN: Plan batte… │  …
+ □ make a new release   │ ⚠ approve deploy canary 2/3?
  › ⏎ to write a message
- ↑↓ select · 1-9 jump · ⏎ write · PgUp/PgDn scroll · d dismiss · q quit
+ ↑↓ select · 1-9 jump · ⏎ write · f filter:all · < rail · > rail · PgUp/PgDn scroll · d dismiss · q quit
 ```
 
 **4 — send picker** (`hub send`, no id given, query `dep` typed):

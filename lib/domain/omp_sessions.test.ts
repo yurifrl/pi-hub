@@ -134,7 +134,22 @@ describe("omp_sessions — mergeFacts (roster-first)", () => {
   });
 
   it("roster wins: a known id keeps its hub row untouched", () => {
-    const roster = { "f-1": { id: "f-1", status: "working", cwd: "/hub" } };
+    const roster = {
+      "f-1": {
+        id: "f-1",
+        status: "open" as const,
+        kind: "worker" as const,
+        cwd: "/hub",
+        title: "t",
+        model: "m",
+        phase: "working" as const,
+        log: "logs/f-1.jsonl",
+        toolCounts: {},
+        turns: 0,
+        startedAt: new Date(0).toISOString(),
+        lastActivity: new Date(0).toISOString(),
+      },
+    };
     const { sessions, detached } = mergeFacts(roster, [fact()], 100_001);
     expect(sessions).toEqual([roster["f-1"]]);
     expect(detached).toEqual([]);

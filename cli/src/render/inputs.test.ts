@@ -135,6 +135,36 @@ describe("readKeys — raw-mode stream over fake TTY", () => {
     expect(collected.map(text)).toEqual(["h", "i", "<right>"]);
   });
 
+  it("escape sequence split across chunks merges (tmux send-keys)", async () => {
+    const stdin = new PassThrough();
+    const keys = readKeys(stdin, () => {});
+    stdin.push("f");
+    await tick();
+    stdin.push("\x1b"); // ESC alone — held back, not decoded as escape
+    await tick();
+    stdin.push("[B"); // completes the CSI on the next chunk
+    await tick();
+    stdin.push(null);
+    await tick();
+    const collected: Key[] = [];
+    for await (const k of keys) collected.push(k);
+    expect(collected.map(text)).toEqual(["f", "<down>"]);
+  });
+
+  it("lone esc followed by a real char still yields escape then char", async () => {
+    const stdin = new PassThrough();
+    const keys = readKeys(stdin, () => {});
+    stdin.push("\x1b");
+    await tick();
+    stdin.push("q");
+    await tick();
+    stdin.push(null);
+    await tick();
+    const collected: Key[] = [];
+    for await (const k of keys) collected.push(k);
+    expect(collected.map(text)).toEqual(["<escape>", "q"]);
+  });
+
   it("EOF ends iteration", async () => {
     const stdin = new PassThrough();
     const keys = readKeys(stdin, () => {});

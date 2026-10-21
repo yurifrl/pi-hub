@@ -65,7 +65,7 @@ bun install          # workspaces: lib, cli, web; bin → node_modules/.bin/hub
 
 ```sh
 hub                  # attention board: answer/assign inline, keys ↑↓ ⏎ d a o l q
-hub watch            # chat console: sessions rail + selected conversation, answer/send inline
+hub watch            # chat console: every session (roster + archived + log-only, transcript names), filter f, resizable rail < >
 hub log [-f] [id]    # raw session stream (reads files; works while hub is down)
 hub summaries [id]   # AI summary rail
 ```
