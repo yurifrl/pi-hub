@@ -74,7 +74,7 @@ Inbound frames handled by the reporter, exactly two:
 - `deliver` → `sendUserMessage(text)` — the only inbound mutation of the host session.
 - `reply` → resolves the matching pending cmd by `cmdId`.
 
-Outbound cmds (`reporterCmd(op, payload, timeoutMs)`): stamp `cmdId`, enqueue `{kind:"cmd", cmdId, op, ...payload}`, resolve on reply `{cmdId, ok, text}`. On timeout: resolve `{ok:false, text:"hub command timed out — is the hub running /hub-start?"}`. Never throws.
+Outbound cmds (`reporterCmd(op, payload, timeoutMs)`): stamp `cmdId`, enqueue `{kind:"cmd", cmdId, op, ...payload}`, resolve on reply `{cmdId, ok, text}`. On timeout: resolve `{ok:false, text:"hub command timed out — is the hub running (hub serve or /hub-start)?"}`. Never throws.
 
 ## Tools
 
@@ -92,7 +92,7 @@ Timeouts are per-tool (stated inline in each tool's Routing line). Every timeout
 
 ### hub_list_sessions
 
-Description (registered): "List all live OMP sessions on the hub plus its RPC workers. Requires the hub to be active (/hub-start in the hub terminal)."
+Description (registered): "List all live OMP sessions on the hub plus its RPC workers. Requires the hub to be active (hub serve or /hub-start in the hub terminal)."
 
 ```ts
 // parameters: z.object({}) — no arguments

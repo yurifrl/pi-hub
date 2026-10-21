@@ -414,7 +414,7 @@ describe("hub_tools e2e — real hub stack, fake peer over the socket", () => {
         expect(res.isError).toBe(true);
         const text = (res.content[0] as { text: string }).text;
         expect(text).toContain("hub unreachable");
-        expect(text).toContain("/hub-start");
+        expect(text).toContain("/hub-start"); // serves the tool's live-hub hint in both flavors
     });
 
     it("local route op failure (dead target) → error result, session keeps working", async () => {

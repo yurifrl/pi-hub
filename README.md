@@ -53,9 +53,11 @@ Prerequisites: [Bun](https://bun.sh), and the `omp` binary on `PATH`
 bun install          # workspaces: lib, cli, web; bin → node_modules/.bin/hub
 ```
 
-1. **Start the hub** — in any omp session with the plugin loaded:
-   `/hub-start`. That session becomes the hub: serves `hub.sock`, spawns the
-   RPC brain, registers itself in `status.json`, and renders the widget.
+1. **Start the hub** — the hub needs no omp session: `hub serve` runs the
+   socket, stores, and ops standalone. `bridge/run` (the Hermes bridge)
+   starts one itself when none is live. The omp-embedded alternative:
+   in any session with the plugin loaded, `/hub-start` — that session
+   becomes the hub and also spawns the RPC brain and renders the widget.
    Every other session auto-attaches (reporter runs in each one).
 2. **Open the Hub Console** — run `hub web` (foreground server, opens the
    browser): `http://127.0.0.1:4820`.
@@ -70,8 +72,8 @@ hub summaries [id]   # AI summary rail
 
 More verbs: `answer`, `assign`, `send`, `tool`, `spawn`, `kill`, `archive`,
 `agent`, `web` — `hub --help` for all; global flags `--config`, `--json`,
-`--ndjson`, `--no-color`. Stop the hub with `/hub-stop` (open sessions are
-kept — shutdown does not archive them).
+`--ndjson`, `--no-color`. Stop the hub with SIGINT/SIGTERM on `hub serve`, or `/hub-stop`
+in the hub session (open sessions are kept — shutdown does not archive them).
 
 ## Docs
 

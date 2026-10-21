@@ -291,7 +291,7 @@ export const routeOp = async (name: HubToolName, params: Record<string, unknown>
         ? await deps.connect(deps.env)
         : await connectHubClient({ socketPath: deps.env.sock, client: "plugin", deadlineMs: timeoutMs });
     if (!connected.ok) {
-        return errResult(`hub unreachable at ${deps.env.sock}: ${connected.error.message} — is the hub running /hub-start?`, {
+        return errResult(`hub unreachable at ${deps.env.sock}: ${connected.error.message} — is the hub running (hub serve or /hub-start)?`, {
             op: spec.op,
             error: connected.error,
         });
@@ -339,7 +339,7 @@ export const TOOL_BODIES: Record<HubToolName, ToolBody> = Object.fromEntries(
 
 export const TOOL_DESCRIPTIONS: Record<HubToolName, string> = {
     hub_list_sessions:
-        "List all live OMP sessions on the hub plus its RPC workers. Requires the hub to be active (/hub-start in the hub terminal).",
+        "List all live OMP sessions on the hub plus its RPC workers. Requires the hub to be active (hub serve or /hub-start in the hub terminal).",
     hub_send_message:
         "Send a message into another live OMP session via the hub. The target's agent receives it as a user message. Set wait_seconds to also return its reply.",
     hub_call_tool:
