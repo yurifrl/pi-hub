@@ -1,0 +1,20 @@
+#!/bin/sh
+# Run Hermes attached to the host hub — one-shot interactive CLI, removed on exit.
+# Start the hub first: /hub-start (creates ~/.hub/hub.sock, chmod 0777 after
+# listen — lib/adapters/unix_socket.ts). Single-file socket mount is the
+# transport that works under Apple containers (docs/07-hermes-bridge.md).
+set -eu
+cd "$(dirname "$0")"
+IMAGE=pi-hub-hermes
+
+# Build once; rebuild only when the Dockerfile or plugin changes.
+if ! container image list | grep -q "$IMAGE"; then
+    container build -t "$IMAGE" .
+fi
+
+exec container run --rm -it \
+    -u 1000:1000 \
+    -v "${HOME}/.hub/hub.sock:/run/hub.sock" \
+    -v "$PWD/hermes-hub-plugin:/home/hermes/.hermes/plugins/hermes-hub:ro" \
+    -e HUB_SOCKET=/run/hub.sock \
+    "$IMAGE"

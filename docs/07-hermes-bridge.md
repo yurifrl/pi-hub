@@ -7,27 +7,29 @@ description: Run Hermes Agent in a container, working the hub board from inside 
 
 ## Run it (start here)
 
-Three steps, in order:
-
-**1. Start the hub** on the host — in any omp session with the plugin loaded:
+**1. Start the hub** so `~/.hub/hub.sock` exists. The hub is plain lib code
+(`startUnixSocketServer`, `lib/adapters/unix_socket.ts`) — no omp needed, but
+there is no standalone CLI entry for it yet, so the practical path is:
 
 ```sh
 /hub-start
 ```
 
-That session becomes the hub and creates `~/.hub/hub.sock` (chmod `0777` after
-listen, `lib/adapters/unix_socket.ts` — the container connects as uid 1000).
+in any omp session with the plugin loaded. That session becomes the hub and
+serves the socket (`chmod 0777` after listen so the container's uid 1000 can
+connect).
 
-**2. Bring up Hermes** from the repo root:
+**2. Run Hermes** — it's a CLI agent, one container per session, not a daemon:
 
 ```sh
-container compose -f bridge/compose.yaml up --build
+bridge/run
 ```
 
-First run pulls the base image — needs disk headroom. The socket file must
-already exist (step 1) or the single-file mount fails at start.
+Builds the image on first run (base image pull needs disk headroom) and starts
+an interactive Hermes session with `--rm -it`. The socket file must already
+exist (step 1) or the mount fails at start.
 
-**3. Work the hub from inside Hermes.** Open the Hermes session and just ask:
+**3. Work the hub from inside Hermes.** Just ask:
 
 > Use the hub tool: list the sessions, then answer session abc123 with "on it".
 
@@ -48,7 +50,7 @@ Two injection points, registered by `bridge/hermes-hub-plugin/`:
 
 ```mermaid
 flowchart LR
-    H["hub session<br/>(omp, /hub-start)"] ---|~/.hub/hub.sock<br/>chmod 0777| S["single-file mount<br/>→ /run/hub.sock"]
+    H["hub<br/>(/hub-start today,<br/>lib entry pending)"] ---|~/.hub/hub.sock<br/>chmod 0777| S["single-file mount<br/>→ /run/hub.sock"]
     S --- C["Hermes container<br/>uid 1000"]
     C -->|cmd frame, v:1| H
     H -->|reply frame| C
@@ -67,7 +69,7 @@ flowchart LR
 
 | file | owns |
 |---|---|
-| `bridge/compose.yaml` | the service: socket mount, plugin mount, `HUB_SOCKET` env |
+| `bridge/run` | one-shot start: builds the image, `container run --rm -it`, socket + plugin mounts, `HUB_SOCKET` env |
 | `bridge/Dockerfile` | `python:3.13-slim` + pinned `hermes-agent==0.19.0` wheel (Renovate bumps it), non-root `hermes` user |
 | `bridge/hermes-hub-plugin/` | plugin: `__init__.py` (tool + hook + frame codec), `plugin.yaml` (discovery manifest) |
 

@@ -16,4 +16,5 @@ WORKDIR /home/hermes
 # plugin discovery scans ~/.hermes/plugins/*/ for plugin.yaml + __init__.py
 COPY --chown=hermes:hermes hermes-hub-plugin/ /home/hermes/.hermes/plugins/hermes-hub/
 
-CMD ["hermes", "serve"]
+# hermes is an interactive CLI (bridge/run starts it with a TTY) — no daemon CMD.
+ENTRYPOINT ["hermes"]
