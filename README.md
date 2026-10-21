@@ -106,7 +106,7 @@ socket. Type-check each workspace with `bun run check`.
 pi-hub/
 ├── package.json        # @yurifrl/pi-hub — omp plugin root; workspaces lib/cli/web
 ├── lib/                # @yurifrl/hub — hexagonal core: domain/ ports/ adapters/ theme.ts
-├── cli/                # @yurifrl/hub-cli — bin `hub`: bin.ts commands/ render/ screens/
+├── cli/                # @yurifrl/hub-cli — bin `hub`: bin.ts commands/ tui/
 ├── web/                # @yurifrl/hub-web — Hub Console: index.ts server.ts routes/
 ├── extensions/         # omp plugin: reporter + 9 hub_* tools + widget
 ├── skills/             # hub-ops (operate the hub), hub-watcher (agent loop)
