@@ -596,13 +596,19 @@ describe("hub_env — resolution happens at the extension boundary", () => {
     });
 
     it("overrides flow through; OMP_HUB_BRAIN / OMP_HUB_AGENT parse only '1'", async () => {
-        const e = resolveHubEnv({ OMP_HUB_SOCK: "/tmp/x/h.sock", OMP_BIN: "/opt/omp", OMP_HUB_BRAIN: "1", OMP_HUB_AGENT: "on", OMP_HUB_MODEL: "m1" });
+        const e = resolveHubEnv({ OMP_HUB_SOCK: "/tmp/x/h.sock", OMP_BIN: "/opt/omp", OMP_HUB_BRAIN: "1", OMP_HUB_AGENT: "on", OMP_HUB_MODEL: "m1", OMP_HUB_SESSIONS_ROOT: "/tmp/omp-sessions" });
         expect(e.sock).toBe("/tmp/x/h.sock");
         expect(e.dataRoot).toBe("/tmp/x");
         expect(e.ompBin).toBe("/opt/omp");
         expect(e.brain).toBe(true);
         expect(e.hubAgent).toBe(false); // only "1" counts
         expect(e.model).toBe("m1");
+        expect(e.sessionsRoot).toBe("/tmp/omp-sessions");
+    });
+
+    it("sessionsRoot defaults to ~/.omp/agent/sessions (docs/02 §Sessions op)", () => {
+        const e = resolveHubEnv({});
+        expect(e.sessionsRoot.endsWith(".omp/agent/sessions") || e.sessionsRoot.endsWith(".omp\\agent\\sessions")).toBe(true);
     });
 
     it("lib stays env-free: createHubLocal takes HubEnv, never reads process.env", async () => {

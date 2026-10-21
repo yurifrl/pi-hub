@@ -20,9 +20,13 @@ export type HubEnv = {
     /** data root (~/.hub); derived from the socket path's directory — status.json,
      * logs, summaries, archive all live beside the socket (docs/02 §Data root). */
     dataRoot: string;
+    /** machine-wide omp transcript root for the sessions op (docs/02 §sessions);
+     * default ~/.omp/agent/sessions, matching cmd_tails' SESSIONS_DIR. */
+    sessionsRoot: string;
 };
 
 const DEFAULT_SOCK = join(homedir(), ".hub", "hub.sock");
+const DEFAULT_SESSIONS_ROOT = join(homedir(), ".omp", "agent", "sessions");
 
 /** Resolve the hub env from an env record (defaults per docs/05). */
 export const resolveHubEnv = (env: Record<string, string | undefined> = process.env): HubEnv => {
@@ -35,5 +39,9 @@ export const resolveHubEnv = (env: Record<string, string | undefined> = process.
         ompBin: env.OMP_BIN && env.OMP_BIN.length > 0 ? env.OMP_BIN : "omp",
         hubAgent: env.OMP_HUB_AGENT === "1",
         dataRoot: sock.includes("/") ? sock.slice(0, sock.lastIndexOf("/")) : ".",
+        sessionsRoot:
+            env.OMP_HUB_SESSIONS_ROOT && env.OMP_HUB_SESSIONS_ROOT.length > 0
+                ? env.OMP_HUB_SESSIONS_ROOT
+                : DEFAULT_SESSIONS_ROOT,
     };
 };

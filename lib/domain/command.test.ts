@@ -38,6 +38,7 @@ describe("op registry", () => {
       "logTail",
       "summaries",
       "agent",
+      "sessions",
       "ping",
     ]);
   });

@@ -21,6 +21,8 @@ import type { AttentionStore } from "../ports/attention_store";
 import type { ArchiveStore } from "../ports/archive_store";
 import type { Clock } from "../ports/clock";
 import type { LogStore } from "../adapters/jsonl_store";
+import type { OmpTranscriptStore } from "../ports/omp_transcripts";
+import { mergeFacts } from "../domain/omp_sessions";
 
 const ok = <T>(value: T): Result<T, HubError> => ({ ok: true, value });
 
@@ -60,6 +62,10 @@ export type HubCoreDeps = {
      * for CLI/web/plugin. Undefined → the op replies denied (hub built
      * without a watcher, tests). */
     spawnAgent?: () => Promise<Result<{ name: string }, HubError>>;
+    /** machine-wide omp session scanner (the `sessions` op's body):
+     * lib/adapters/omp_transcripts over the omp transcript tree — docs/02
+     * §sessions. Undefined → the op replies denied (tests, stripped builds). */
+    ompSessions?: OmpTranscriptStore;
 };
 
 /** The hub-side runtime: event intake, command dispatch, child lifecycle. */
@@ -489,6 +495,19 @@ export const createHubCore = (deps: HubCoreDeps, config: HubCoreConfig = {}): Hu
             case "logTail":
             case "summaries":
                 return { ok: false, error: hubError("denied", `op ${req.op} not served by the plugin hub yet`, { retryable: false }) };
+            case "sessions": {
+                // docs/02 §sessions: machine-wide omp inventory merged under the
+                // roster. Roster rows win by id; unknown fresh transcripts surface
+                // as detached rows; stale/exited transcripts are counted only.
+                if (!deps.ompSessions) {
+                    return { ok: false, error: hubError("denied", "sessions not available (no transcript scanner wired)", { retryable: false }) };
+                }
+                const scan = await deps.ompSessions.scan();
+                if (!scan.ok) return scan;
+                const snap = await deps.status.read();
+                if (!snap.ok) return snap;
+                return ok(mergeFacts(snap.value.sessions, scan.value.facts, deps.clock.now()));
+            }
             case "ping":
                 // liveness probe (docs/03 §Subcommands ping): a full dispatch
                 // round-trip proves socket, parser, and core are alive. No state.
@@ -500,7 +519,7 @@ export const createHubCore = (deps: HubCoreDeps, config: HubCoreConfig = {}): Hu
 
     const surface = {
         dispatch,
-        ops: (): OpName[] => ["list", "send", "tool", "spawn", "kill", "archive", "attention", "answer", "assign", "logTail", "summaries", "agent", "ping"],
+        ops: (): OpName[] => ["list", "send", "tool", "spawn", "kill", "archive", "attention", "answer", "assign", "logTail", "summaries", "agent", "sessions", "ping"],
     };
 
     return {

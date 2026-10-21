@@ -18,6 +18,7 @@ import { createTimeoutScheduler } from "@yurifrl/hub/adapters/timeout_scheduler"
 import { createOmpAgentRuntime } from "@yurifrl/hub/adapters/omp_agent";
 import { startUnixSocketServer } from "@yurifrl/hub/adapters/unix_socket";
 import type { HubSocketServer, ReportFrame } from "@yurifrl/hub/adapters/unix_socket";
+import { createOmpTranscriptStore } from "@yurifrl/hub/adapters/omp_transcripts";
 import { startWatcher } from "@yurifrl/hub/runtime/watcher";
 import type { WatcherRuntime } from "@yurifrl/hub/runtime/watcher";
 import { createHubCore } from "@yurifrl/hub/runtime/hub_core";
@@ -164,6 +165,9 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
             archive,
             clock,
             selfSessionId: deps.selfSessionId,
+            // machine-wide omp transcript scan behind the `sessions` op
+            // (docs/02 §sessions); lib/adapters over env.sessionsRoot.
+            ompSessions: createOmpTranscriptStore(env.sessionsRoot),
             deliverTo: (sessionId, text) => socket?.deliverTo(sessionId, text) ?? { ok: false, error: { code: "unknown-session", message: "hub not serving", retryable: false } },
             // the `agent` op's body: the watcher's supervised spawn (docs/05
             // §Agent spawn). Deferred — the watcher exists only after start().

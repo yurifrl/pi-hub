@@ -8,6 +8,7 @@ export * from "./domain/session";
 export * from "./domain/attention";
 export * from "./domain/summary";
 export * from "./domain/filter";
+export * from "./domain/omp_sessions";
 
 // ---- ports ----
 export * from "./ports/status_store";
@@ -16,6 +17,7 @@ export * from "./ports/attention_store";
 export * from "./ports/event_bus";
 export * from "./ports/agent_runtime";
 export * from "./ports/clock";
+export * from "./ports/omp_transcripts";
 
 // ---- theme ----
 export * from "./theme";

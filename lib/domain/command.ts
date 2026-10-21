@@ -41,6 +41,7 @@ export type OpName =
   | "logTail"
   | "summaries"
   | "agent"
+  | "sessions"
   | "ping";
 
 export const OP_NAMES: readonly OpName[] = [
@@ -56,6 +57,7 @@ export const OP_NAMES: readonly OpName[] = [
   "logTail",
   "summaries",
   "agent",
+  "sessions",
   "ping",
 ] as const;
 

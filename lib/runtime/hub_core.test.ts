@@ -14,11 +14,13 @@ import type { SummaryStore } from "../ports/summary_store";
 import type { AttentionStore } from "../ports/attention_store";
 import type { AgentRuntime } from "../ports/agent_runtime";
 import type { Clock } from "../ports/clock";
+import type { OmpTranscriptStore } from "../ports/omp_transcripts";
+import type { OmpSessionFact } from "../domain/omp_sessions";
 import type { LogStore, StoredLogEntry } from "../adapters/jsonl_store";
 
 const ok = <T>(value: T): Result<T, HubError> => ({ ok: true, value });
 
-const makeCore = (opts: { selfSessionId?: string; deliverTo?: (sessionId: string, text: string) => Result<void, HubError>; restartGraceMs?: number } = {}) => {
+const makeCore = (opts: { selfSessionId?: string; deliverTo?: (sessionId: string, text: string) => Result<void, HubError>; restartGraceMs?: number; ompSessions?: OmpTranscriptStore } = {}) => {
     const statusFile: StatusFile = {
         version: 1,
         startedAt: "2026-01-01T00:00:00.000Z",
@@ -106,6 +108,7 @@ const makeCore = (opts: { selfSessionId?: string; deliverTo?: (sessionId: string
             clock,
             selfSessionId: () => opts.selfSessionId ?? "",
             ...(opts.deliverTo !== undefined ? { deliverTo: opts.deliverTo } : {}),
+            ...(opts.ompSessions !== undefined ? { ompSessions: opts.ompSessions } : {}),
         },
         { ...(opts.restartGraceMs !== undefined ? { restartGraceMs: opts.restartGraceMs } : {}) },
     );
@@ -310,5 +313,56 @@ describe("hub_core — reapStale (docs/02 §hub-restart)", () => {
         expect(archiveRecords[0]!.resolutions).toEqual([
             expect.objectContaining({ id: "att-1", resolvedAt: "1970-01-01T00:16:40.000Z" }),
         ]);
+    });
+});
+
+describe("hub_core — sessions op (docs/02 §sessions)", () => {
+    const fact = (id: string, lastActivityMs: number): OmpSessionFact => ({
+        sessionId: id,
+        cwd: `/Users/yuri/proj-${id}`,
+        title: `first user text of ${id}`,
+        model: "some/model",
+        lastActivityMs,
+        saidBye: false,
+    });
+
+    const scannerOf = (facts: OmpSessionFact[]): OmpTranscriptStore => ({
+        scan: async () => ({ ok: true, value: { sessions: [], detached: [], errors: [], facts } }),
+    });
+
+    it("denies when no transcript scanner is wired (tests, stripped builds)", async () => {
+        const { core } = makeCore();
+        const res = await core.surface.dispatch({ cmdId: "c1", op: "sessions", args: {}, by: "cli" });
+        expect(res.ok).toBe(false);
+        if (!res.ok) expect(res.error.message).toContain("no transcript scanner");
+    });
+
+    it("merges roster rows over facts and surfaces unknown fresh transcripts as detached", async () => {
+        const { core, statusFile } = makeCore({ ompSessions: scannerOf([fact("s-hub", 999_000), fact("s-fresh", 999_000), fact("s-stale", 0)]) });
+        await seedSession(core, "s-hub");
+
+        const res = await core.surface.dispatch({ cmdId: "c1", op: "sessions", args: {}, by: "cli" });
+        expect(res.ok).toBe(true);
+        if (!res.ok) return;
+        const value = res.value as { sessions: Array<Record<string, unknown>>; detached: string[] };
+
+        // roster row wins by id — untouched hub record shape
+        expect(value.sessions).toContainEqual(expect.objectContaining({ id: "s-hub", status: "open" }));
+        // unknown fresh fact → detached session row, cwd decoded cwd shape
+        expect(value.sessions).toContainEqual(expect.objectContaining({ id: "s-fresh", status: "detached", kind: "peer", phase: "working" }));
+        // stale fact → counted in detached ids only, no row
+        expect(value.detached).toEqual(["s-stale"]);
+        expect(value.sessions).toHaveLength(2);
+    });
+
+    it("propagates a whole-scan failure as the op's error value", async () => {
+        const { core } = makeCore({
+            ompSessions: {
+                scan: async () => ({ ok: false, error: { code: "unavailable-hub", message: "omp transcript scan failed: boom", retryable: true } }),
+            },
+        });
+        const res = await core.surface.dispatch({ cmdId: "c1", op: "sessions", args: {}, by: "cli" });
+        expect(res.ok).toBe(false);
+        if (!res.ok) expect(res.error.message).toContain("omp transcript scan failed");
     });
 });
