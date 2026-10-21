@@ -118,12 +118,13 @@ body {
   position: fixed;
   inset: 0;
   background: color-mix(in srgb, var(--ink) 32%, transparent);
-  display: flex;
+  display: none; /* [hidden] is the open/close switch — JS toggles it */
   align-items: flex-start;
   justify-content: center;
   padding: 12vh 16px 0;
   z-index: 40;
 }
+.search-dialog:not([hidden]) { display: flex; }
 .search-panel {
   width: min(560px, 100%);
   background: var(--surface);
