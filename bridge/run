@@ -13,7 +13,7 @@ IMAGE=pi-hub-hermes
 # Build once; rebuild only when the Dockerfile changes. The plugin is
 # bind-mounted from source below, so plugin edits never need a rebuild.
 if [ ! -f .image-built ] || [ Dockerfile -nt .image-built ]; then
-  container build -t "$IMAGE" .
+  docker build -t "$IMAGE" .
   touch .image-built
 fi
 
@@ -62,9 +62,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-container run --rm -it \
+docker run --rm -it \
   -v "$SOCK:/run/hub.sock" \
   -v "$STATE:/home/hermes/.hermes" \
   -v "$PWD/hermes-hub-plugin:/home/hermes/.hermes/plugins/hermes-hub" \
+  -e OPENROUTER_API_KEY=$OPENROUTER_API_KEY \
   -e OMP_HUB_SOCK=/run/hub.sock \
   "$IMAGE"
