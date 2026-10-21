@@ -4,6 +4,7 @@
 // under ~/.hub (docs/03 §bin Decision: single-writer rule).
 
 import { readdirSync, readFileSync } from "node:fs";
+import { parseLogLines } from "./log_entry";
 import { join } from "node:path";
 import type { LogEntry, StatusFile, SummaryLine } from "@yurifrl/hub";
 import type { HubCliConfig } from "./config";
@@ -37,10 +38,7 @@ export const makeFileReader = (config: HubCliConfig): HubFiles => ({
     } catch {
       return []; // session open but log file absent — caller renders "no entries yet"
     }
-    return body
-      .split("\n")
-      .map(parseJsonlLine)
-      .filter((v): v is LogEntry => v !== null && typeof v === "object" && "kind" in (v as object));
+    return parseLogLines(body);
   },
 
   summaryLines(tail = 20) {

@@ -61,6 +61,13 @@ describe("decodeKey — escape sequences atomic", () => {
     expect(decodeKey(bytes(0x1b, 0x1b)).kind).toBe("ignore");
     expect(decodeKey(bytes(0x1b, 0x6f)).kind).toBe("ignore");
   });
+
+  it("tab and PgUp/PgDn; other tilde keys → ignore", () => {
+    expect(decodeKey(bytes(0x09))).toEqual({ kind: "tab" });
+    expect(decodeKey(enc("\x1b[5~"))).toEqual({ kind: "pageup" });
+    expect(decodeKey(enc("\x1b[6~"))).toEqual({ kind: "pagedown" });
+    expect(decodeKey(enc("\x1b[3~")).kind).toBe("ignore"); // delete
+  });
 });
 
 describe("decodeKey — UTF-8", () => {

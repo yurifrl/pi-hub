@@ -153,10 +153,11 @@ Shared conventions:
 - Close human: `✓ archived <id>`; `--json`: `{type:"snapshot", data:{archived:true, id, path}}`.
 - Errors: close → as `kill`; unreadable archive dir → 1 with the path in the message.
 
-**`hub watch`** — the full-screen console (alt-screen): **attention rail on top, live log below** (sketch 3). Keys: `l` log-only mode (attention rail hidden), `a` attention-only mode (log pane hidden), `1-9` pin the nth session to the log pane (pin again to unpin), `/` filter prompt (substring across session name and entry text; esc clears), `q` quit. The attention rail supports the board's inline model in full: ↑↓ focus, ←/→/⌫ edit, type + ⏎ answers, `d` dismisses. The log pane tails all open sessions merged by time with hue bars per session; pinned, it shows one session only.
-- Machine modes: static snapshot (attention items + last 50 log lines), no alt-screen.
-- Errors: hub unreachable while open is a rendered state, not a crash — the attention rail shows `(hub offline)` muted, the log pane keeps working from `logs/*.jsonl`; exit happens only on `q`.
-- **Decision:** `watch` degrades instead of failing on hub loss. **Why:** it is a viewer; killing the console because the hub restarted would destroy the operator's context. **Contract:** mutations attempted while offline produce an inline `err` line in the rail, never a process exit.
+**`hub watch`** — the full-screen chat console (alt-screen): **sessions rail on the left, the selected session's conversation on the right**, a compose row and a key/notice footer below (sketch 3). The rail lists every session with a state glyph (`✓` idle/working, `⚠` needs you, `✗` errored), its name and an unread count for sessions you are not looking at. The chat shows user/assistant messages as `time who` headers with indented bodies; tool calls are one muted `▶ tool arg` line each; empty system rows are dropped. An open attention item for the selected session is pinned above the compose row.
+- Keys: `↑↓`/`Tab` select a session, `1-9` jump to the nth, `⏎` focus the compose row, `PgUp`/`PgDn` scroll the chat, `d` dismiss the selected session's open attention item, `q`/`ctrl-c` quit (in compose: `esc` returns to the rail). Typing in compose edits a draft with `←/→/⌫`; `⏎` on a non-empty draft sends it — as the **answer** to the session's open attention item when there is one, otherwise as a plain message to the session.
+- Machine modes: static snapshot (selected session's last chat lines + attention items), no alt-screen.
+- Errors: hub unreachable while open is a rendered state, not a crash — the header shows `(hub offline)` muted, the chat keeps working from `logs/*.jsonl`; exit happens only on `q`.
+- **Decision:** `watch` degrades instead of failing on hub loss. **Why:** it is a viewer; killing the console because the hub restarted would destroy the operator's context. **Contract:** a send or answer attempted while offline produces an inline `err` notice in the footer, never a process exit.
 
 **`hub agent [--surface S]`** — start the hub's own agent: an `omp --mode acp` child via the omp_agent adapter, env `OMP_HUB_AGENT=1`, recorded with `kind:"agent"` in status.json.
 - `--surface S`: writes `~/.hub/agents/<name>/surface.json` declaring the `agentSurface` id (default `watcher`; demo surface `pending`). Surface ownership in `06-agents-and-skills.md`.
@@ -320,19 +321,18 @@ Hue bars `▎` are two cells wide, colored per session (plain here). The cursor 
  keys l log · q quit
 ```
 
-**3 — watch split** (`hub watch`):
+**3 — watch chat** (`hub watch`):
 
 ```text
- hub watch · 5 sessions · no pin · filter —
- ⚠ ───────────────────────────────────────────────────────
- ▎ approval  tilt   approve deploy canary 2/3?   › █
- ⏳ ───────────────────────────────────────────────────────
- ▎ 14:02:11  tilt   ▶ Bash   bun test deploy/canary.test.ts
- ▎ 14:02:14  tilt   ✔ exit 0 (1.2s)
- ▎ 14:02:15  tilt   ✎ Edit   deploy/canary.sh +12 -3
- ▎ 14:02:20  web-1  ▶ Bash   bun run build
- ▎ 14:02:24  docs   ⚠ question raised → attention
- keys l log-only · a attention-only · 1-9 pin · / filter · q quit
+ hub watch · 5 sessions · 1 need you
+ sessions        │ tilt · working · opus · canary rollout
+▸⚠ tilt          │14:02:11 tilt
+ ✓ web-1      2  │  I'll run the canary tests first.
+ ✓ docs          │  ▶ bash bun test deploy/canary.test.ts
+                 │  ▶ edit deploy/canary.sh
+                 │ ⚠ approve deploy canary 2/3?
+ › ⏎ to write a message
+ ↑↓ select · 1-9 jump · ⏎ write · PgUp/PgDn scroll · d dismiss · q quit
 ```
 
 **4 — send picker** (`hub send`, no id given, query `dep` typed):

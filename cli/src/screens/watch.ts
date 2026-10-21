@@ -1,107 +1,144 @@
 // cli/src/screens/watch.ts — `hub watch` state machine (docs/03-cli.md
-// §hub watch): the split console — attention rail on top, live log below.
-// Pure: frames + keys in → new state + paint plan out. The concrete host
-// (cmd_watch.ts) owns raw stdin, alt-screen, and the poll/fallback tick.
+// §hub watch): the chat console — a sessions rail on the left (one symbol per
+// session: working / waiting / done / blocked / needs you, plus an unread
+// count), the selected session's conversation on the right, a compose line
+// underneath. Pure: frames + keys in → new state + actions out. The concrete
+// host (cmd_watch.ts) owns raw stdin, alt-screen, the log tails and the
+// poll/fallback tick; render/watch_view.ts paints a state.
 //
-// Modes (docs/03): `l` log-only (attention rail hidden), `a` attention-only
-// (log pane hidden), `1-9` pin the nth session to the log pane (pin again to
-// unpin), `/` filter prompt (substring across session name and entry text;
-// esc clears), `q` quit. Attention rail keeps the board's inline model in
-// full: type + ⏎ answers through cmd `send`, `d` dismisses (cmd `attention`
-// dismiss). Hub loss degrades: rail renders `(hub offline)`, log pane keeps
-// tailing files — offline is a rendered state, never an exit (docs/03).
+// Keys. Rail focus: ↑↓ select · 1-9 jump · ⏎/Tab/→ write · PgUp/PgDn scroll ·
+// d dismiss the session's open attention item · q quit. Compose focus: type,
+// ⏎ sends (cmd `send`; or cmd `answer` when the session has an open attention
+// item — the reply goes where the question came from), esc/Tab back to the
+// rail. Hub loss degrades: the header shows offline, files keep tailing —
+// offline is a rendered state, never an exit (docs/03).
 
-import type { AttentionItem, LogEntry, StatusFile, StatusSnapshot } from "@yurifrl/hub";
-import { boardLines, moveFocus, type BoardLine, type BoardModel, type BoardFocus } from "../render/board";
-import { streamLines, filterEntries, type StreamLine } from "../render/stream";
-import { hueIndex } from "../render/theme";
+import type { AttentionItem, LogEntry, SessionRecord, StatusFile, ThemeToken } from "@yurifrl/hub";
 import type { FeedEvent } from "../hub_events";
 import type { Key } from "../render/inputs";
 
-/** Rail visibility (docs/03 §hub watch keys l/a). */
-export type WatchMode = "split" | "log-only" | "attention-only";
+export type WatchFocus = "rail" | "compose";
+
+/** Transient footer line: send result or a refused command. */
+export type Notice = { text: string; tone: "ok" | "err" };
 
 export type WatchState = {
-  mode: WatchMode;
-  /** pinned session (nth open session by insertion order, 1-indexed keys 1-9) */
-  pin: string | null;
-  /** filter query, empty = off */
-  filter: string;
-  /** filter prompt open (typing feeds `filter`) */
-  filterOpen: boolean;
-  /** merged log tail across open sessions, oldest first */
-  entries: LogEntry[];
+  focus: WatchFocus;
+  /** selected session id; null only while there are no sessions */
+  selected: string | null;
+  /** per-session conversation tail, oldest first, capped at MAX_ENTRIES */
+  entries: Record<string, LogEntry[]>;
+  /** per-session count of entries that arrived while another session was selected */
+  unread: Record<string, number>;
+  /** per-session compose draft (survives switching sessions) */
+  drafts: Record<string, string>;
+  /** lines scrolled up from the bottom of the selected conversation */
+  scroll: number;
   /** last known status.json (fallback tick re-reads; hub loss freezes it) */
   status: StatusFile | null;
-  /** hub connection lost — rail degrades to (hub offline) */
+  /** hub connection lost */
   offline: boolean;
-  /** board-family focus model for the attention rail */
-  focus: BoardFocus;
-  /** latest orientation sentence seen (status.digest synthesized upstream) */
   orientation: string | undefined;
-  /** last dismiss/answer failure — inline err line in the rail */
-  railError: string | null;
+  notice: Notice | null;
 };
 
-export const initialWatchState = (status: StatusFile | null): WatchState => ({
-  mode: "split",
-  pin: null,
-  filter: "",
-  filterOpen: false,
-  entries: [],
-  status,
-  offline: false,
-  focus: { slot: null, drafts: new Map(), input: null },
-  orientation: undefined,
-  railError: null,
-});
+/** What the painter can currently show — the host measures it so scrolling clamps. */
+export type ViewMetrics = { pageRows: number; maxScroll: number };
 
-/** Open session ids in status.json insertion order (pin numbering basis). */
-export const openSessionIds = (status: StatusFile | null): string[] =>
-  status === null
-    ? []
-    : Object.entries(status.sessions)
-        .filter(([, rec]) => rec.status === "open")
-        .map(([id]) => id);
+export const MAX_ENTRIES = 400;
 
-/** Apply one decoded hub event (docs/02 §Event frames payloads). */
+/** Session ids in status.json insertion order — the rail's order and the 1-9 basis. */
+export const railIds = (status: StatusFile | null): string[] => (status === null ? [] : Object.keys(status.sessions));
+
+/** Keep `selected` valid against the current session set; selecting reads the session. */
+export const ensureSelection = (s: WatchState): WatchState => {
+  const ids = railIds(s.status);
+  if (ids.length === 0) return s.selected === null ? s : { ...s, selected: null, scroll: 0 };
+  if (s.selected !== null && ids.includes(s.selected)) return s;
+  return selectSession(s, ids[0]!);
+};
+
+export const initialWatchState = (status: StatusFile | null): WatchState =>
+  ensureSelection({
+    focus: "rail",
+    selected: null,
+    entries: {},
+    unread: {},
+    drafts: {},
+    scroll: 0,
+    status,
+    offline: false,
+    orientation: status?.digest,
+    notice: null,
+  });
+
+/** Make `id` the open conversation: scroll to the bottom, mark it read. */
+export const selectSession = (s: WatchState, id: string): WatchState => {
+  const { [id]: _read, ...unread } = s.unread;
+  void _read;
+  return { ...s, selected: id, scroll: 0, unread };
+};
+
+/** Unresolved attention items raised by `sessionId`, oldest first. */
+export const openAttention = (s: WatchState, sessionId: string): AttentionItem[] =>
+  (s.status?.attention ?? []).filter((a) => a.sessionId === sessionId && a.resolvedAt === undefined);
+
+/** Rail label: the working directory's basename, else the id prefix. */
+export const sessionName = (id: string, rec: SessionRecord | undefined): string =>
+  rec?.cwd.split("/").filter((p) => p.length > 0).pop() ?? id.slice(0, 8);
+
+/**
+ * The rail symbol: needs-you wins; otherwise the phase — working ●, waiting
+ * for a reply ?, idle/done ✓, blocked ✖. A closing session is a muted dot.
+ */
+export const sessionGlyph = (rec: SessionRecord | undefined, needsYou: boolean): { glyph: string; token: ThemeToken } => {
+  if (rec === undefined || rec.status === "closing") return { glyph: "·", token: "muted" };
+  if (needsYou) return { glyph: "⚠", token: "warn" };
+  switch (rec.phase) {
+    case "working":
+      return { glyph: "●", token: "accent" };
+    case "waiting":
+      return { glyph: "?", token: "warn" };
+    case "blocked":
+      return { glyph: "✖", token: "err" };
+    default:
+      return { glyph: "✓", token: "ok" };
+  }
+};
+
+/**
+ * Fold freshly tailed entries of one session into the state. `live` entries
+ * (appended after the first read) count as unread when another session is
+ * open; the first read of a file is history and never does.
+ */
+export const mergeEntries = (s: WatchState, sessionId: string, fresh: LogEntry[], live: boolean): WatchState => {
+  if (fresh.length === 0) return s;
+  const all = [...(s.entries[sessionId] ?? []), ...fresh];
+  const entries = { ...s.entries, [sessionId]: all.length > MAX_ENTRIES ? all.slice(all.length - MAX_ENTRIES) : all };
+  const bump = live && sessionId !== s.selected ? fresh.filter((e) => e.kind !== "user_message").length : 0;
+  const unread = bump > 0 ? { ...s.unread, [sessionId]: (s.unread[sessionId] ?? 0) + bump } : s.unread;
+  return { ...s, entries, unread };
+};
+
+/**
+ * Apply one decoded hub event (docs/02 §Event frames payloads). Conversation
+ * entries are NOT taken from `log` frames: the file tail is the single source,
+ * so a frame arriving while the tail also reads the file can never double a line.
+ */
 export const applyEvent = (s: WatchState, evt: FeedEvent): WatchState => {
   const p = evt.payload as Record<string, unknown>;
   switch (evt.topic) {
-    case "log": {
-      const entry: LogEntry = {
-        t: typeof p.t === "number" ? p.t : Date.now(),
-        sessionId: String(p.sessionId ?? ""),
-        kind: p.kind as LogEntry["kind"],
-        text: String(p.text ?? ""),
-        ...(p.meta !== undefined && p.meta !== null ? { meta: p.meta as Record<string, unknown> } : {}),
-      };
-      return { ...s, entries: appendEntry(s.entries, entry) };
-    }
-    case "summary":
-      return s; // rail material comes from summaries.jsonl reads, not the live tail
     case "attention":
-      // payload is the touched item (removal carries resolvedAt) — refresh via
-      // the next fallback tick; live add/remove patches the rail now
       return patchAttention(s, p as unknown as AttentionItem);
     case "phase": {
       const id = String(p.sessionId ?? "");
       if (s.status === null || s.status.sessions[id] === undefined) return s;
-      const rec = { ...s.status.sessions[id]!, phase: p.phase as StatusFile["sessions"][string]["phase"] };
+      const rec = { ...s.status.sessions[id]!, phase: p.phase as SessionRecord["phase"] };
       return { ...s, status: { ...s.status, sessions: { ...s.status.sessions, [id]: rec } } };
     }
-    case "status":
-      return s; // snapshot material — the fallback tick re-reads status.json
     default:
-      return s;
+      return s; // log: tail owns entries; summary/status: the fallback tick re-reads
   }
-};
-
-const MAX_ENTRIES = 500;
-
-const appendEntry = (entries: LogEntry[], e: LogEntry): LogEntry[] => {
-  const next = [...entries, e];
-  return next.length > MAX_ENTRIES ? next.slice(next.length - MAX_ENTRIES) : next;
 };
 
 /** attention event payload: touched item; a resolvedAt item leaves the rail. */
@@ -113,123 +150,88 @@ const patchAttention = (s: WatchState, item: AttentionItem): WatchState => {
 };
 
 export type KeyAction =
-  | { type: "state"; state: WatchState }
   | { type: "quit" }
-  | { type: "answer"; itemId: string; sessionId: string; text: string }
-  | { type: "dismiss"; itemId: string };
+  | { type: "state"; state: WatchState }
+  | { type: "send"; sessionId: string; text: string; state: WatchState }
+  | { type: "answer"; itemId: string; sessionId: string; text: string; state: WatchState }
+  | { type: "dismiss"; itemId: string; state: WatchState };
 
-/**
- * One key against the state (docs/03 §hub watch keys). `openCount` bounds the
- * 1-9 pin range. Filter prompt consumes chars/⌫/⏎; esc closes + clears.
- * Attention edits delegate to the board focus model (drafts + input).
- */
-export const applyKey = (s: WatchState, key: Key, _openCount: number): KeyAction => {
-  // quit wins everywhere
+const moveSelection = (s: WatchState, delta: 1 | -1): WatchState => {
+  const ids = railIds(s.status);
+  if (ids.length === 0) return s;
+  const at = s.selected === null ? -1 : ids.indexOf(s.selected);
+  const next = Math.min(ids.length - 1, Math.max(0, at + delta));
+  return ids[next] === s.selected ? s : selectSession(s, ids[next]!);
+};
+
+const scrollBy = (s: WatchState, delta: number, view: ViewMetrics): WatchState => ({
+  ...s,
+  scroll: Math.min(view.maxScroll, Math.max(0, s.scroll + delta)),
+});
+
+/** One key against the state. Every non-quit action carries the next state. */
+export const applyKey = (prev: WatchState, key: Key, view: ViewMetrics): KeyAction => {
   if (key.kind === "ctrl-c") return { type: "quit" };
-  if (key.kind === "char" && key.char === "q" && !s.filterOpen && s.focus.input === null) return { type: "quit" };
+  const s: WatchState = prev.notice === null ? prev : { ...prev, notice: null };
 
-  // filter prompt open: it owns the keyboard
-  if (s.filterOpen) {
-    if (key.kind === "escape") return { type: "state", state: { ...s, filterOpen: false, filter: "" } };
-    if (key.kind === "enter") return { type: "state", state: { ...s, filterOpen: false } };
-    if (key.kind === "backspace") return { type: "state", state: { ...s, filter: s.filter.slice(0, -1) } };
-    if (key.kind === "char") return { type: "state", state: { ...s, filter: s.filter + key.char } };
-    return { type: "state", state: s };
-  }
+  if (key.kind === "pageup") return { type: "state", state: scrollBy(s, view.pageRows, view) };
+  if (key.kind === "pagedown") return { type: "state", state: scrollBy(s, -view.pageRows, view) };
 
-  // an open attention input consumes typing (docs/03: type + ⏎ answers, esc cancels)
-  if (s.focus.input !== null) {
-    if (key.kind === "escape") return { type: "state", state: { ...s, focus: { ...s.focus, input: null } } };
-    if (key.kind === "enter") {
-      const slot = s.focus.slot;
-      if (slot === null || slot.type !== "attention") return { type: "state", state: { ...s, focus: { ...s.focus, input: null } } };
-      const item = s.status?.attention[slot.index];
-      if (item === undefined) return { type: "state", state: { ...s, focus: { ...s.focus, input: null } } };
-      const text = s.focus.input;
-      const drafts = new Map(s.focus.drafts);
-      drafts.set(item.id, text);
-      return {
-        type: "answer",
-        itemId: item.id,
-        sessionId: item.sessionId,
-        text,
-        // commit: clear input, keep draft as history (docs/03 board focus model)
-        state: { ...s, focus: { slot: null, drafts, input: null } },
-      } as KeyAction & { state: WatchState };
-    }
-    if (key.kind === "backspace") return { type: "state", state: { ...s, focus: { ...s.focus, input: s.focus.input.slice(0, -1) } } };
-    if (key.kind === "char") return { type: "state", state: { ...s, focus: { ...s.focus, input: s.focus.input + key.char } } };
-    return { type: "state", state: s };
-  }
+  if (s.focus === "compose") return composeKey(s, key);
 
-  // mode + pin + filter keys
-  if (key.kind === "char") {
-    if (key.char === "l") return { type: "state", state: { ...s, mode: s.mode === "log-only" ? "split" : "log-only" } };
-    if (key.char === "a") {
-      // attention-only mode; on a bare board `a` jumps to the first idle assign
-      // input — watch keeps the mode meaning (docs/03 §hub watch)
-      return { type: "state", state: { ...s, mode: s.mode === "attention-only" ? "split" : "attention-only" } };
-    }
-    if (key.char === "/") return { type: "state", state: { ...s, filterOpen: true } };
-    if (key.char >= "1" && key.char <= "9") {
-      const n = Number.parseInt(key.char, 10);
-      const ids = openSessionIds(s.status);
-      if (n >= 1 && n <= Math.min(9, ids.length)) {
-        const target = ids[n - 1]!;
-        return { type: "state", state: { ...s, pin: s.pin === target ? null : target } };
+  // rail focus
+  switch (key.kind) {
+    case "up":
+      return { type: "state", state: moveSelection(s, -1) };
+    case "down":
+      return { type: "state", state: moveSelection(s, 1) };
+    case "enter":
+    case "tab":
+    case "right":
+      return { type: "state", state: s.selected === null ? s : { ...s, focus: "compose" } };
+    case "char": {
+      if (key.char === "q") return { type: "quit" };
+      if (key.char >= "1" && key.char <= "9") {
+        const id = railIds(s.status)[Number.parseInt(key.char, 10) - 1];
+        return { type: "state", state: id === undefined ? s : selectSession(s, id) };
       }
+      if (key.char === "d") return dismissSelected(s);
       return { type: "state", state: s };
     }
-    return { type: "state", state: s };
+    default:
+      return { type: "state", state: s };
   }
-
-  // focus movement / dismiss / edit-start live in the rail
-  return { type: "state", state: s };
 };
 
-/** Open the inline answer input on the first attention item (docs/03 key `a`... board `type to answer`). */
-export const startFirstAnswer = (s: WatchState): WatchState => {
-  if (s.status === null || s.status.attention.length === 0) return s;
-  return { ...s, focus: { ...s.focus, slot: { type: "attention", index: 0 }, input: "" } };
+/** `d`: dismiss the selected session's oldest open attention item (cmd attention dismiss). */
+const dismissSelected = (s: WatchState): KeyAction => {
+  const item = s.selected === null ? undefined : openAttention(s, s.selected)[0];
+  return item === undefined ? { type: "state", state: s } : { type: "dismiss", itemId: item.id, state: s };
 };
 
-/** Move rail focus (↑↓ handled by the host loop calling this). */
-export const moveRailFocus = (s: WatchState, delta: 1 | -1): WatchState => {
-  if (s.status === null) return s;
-  const slot = moveFocus(s.status as never, s.focus.slot, delta);
-  return { ...s, focus: { ...s.focus, slot } };
-};
-
-/** Dismiss the focused item (docs/03 board `d` key → cmd attention dismiss). */
-export const dismissFocused = (s: WatchState): KeyAction => {
-  const slot = s.focus.slot;
-  if (slot === null || slot.type !== "attention" || s.status === null) return { type: "state", state: s };
-  const item = s.status.attention[slot.index];
-  if (item === undefined) return { type: "state", state: s };
-  return { type: "dismiss", itemId: item.id };
-};
-
-/** The rail's board model — watch paints the same lines the bare board does. */
-export const railModel = (s: WatchState, width: number): BoardModel => ({
-  snapshot: {
-    sessions: s.status?.sessions ?? {},
-    attention: s.status?.attention ?? [],
-    summaries: [],
-    agent: { present: s.status?.agentSession !== undefined, surfaceId: null },
-  } as StatusSnapshot,
-  focus: s.focus,
-  ...(s.orientation !== undefined ? { orientation: s.orientation } : {}),
-  width,
-});
-/** Rail lines with the offline degrade (docs/03: `(hub offline)` muted). */
-export const railLines = (s: WatchState, width: number, now: number): BoardLine[] => {
-  const lines = boardLines(railModel(s, width), hueIndex, now);
-  if (!s.offline) return lines;
-  return [{ text: "(hub offline)", segs: [["(hub offline)", "muted" as const]] }, ...lines];
-};
-
-/** Log-pane stream lines: pinned → that session only; filtered → substring match. */
-export const paneLines = (s: WatchState, hueOf: (id: string) => number, width = 0): StreamLine[] => {
-  const entries = s.pin !== null ? s.entries.filter((e) => e.sessionId === s.pin) : s.entries;
-  return streamLines(filterEntries(entries, s.filter), hueOf, width);
+const composeKey = (s: WatchState, key: Key): KeyAction => {
+  const id = s.selected;
+  if (id === null) return { type: "state", state: { ...s, focus: "rail" } };
+  const draft = s.drafts[id] ?? "";
+  const withDraft = (text: string, over: Partial<WatchState> = {}): WatchState => ({ ...s, ...over, drafts: { ...s.drafts, [id]: text } });
+  switch (key.kind) {
+    case "escape":
+    case "tab":
+      return { type: "state", state: { ...s, focus: "rail" } };
+    case "backspace":
+      return { type: "state", state: withDraft(Array.from(draft).slice(0, -1).join("")) };
+    case "char":
+      return { type: "state", state: withDraft(draft + key.char) };
+    case "enter": {
+      const text = draft.trim();
+      if (text.length === 0) return { type: "state", state: s };
+      const sent = withDraft("", { scroll: 0 });
+      const item = openAttention(s, id)[0];
+      return item === undefined
+        ? { type: "send", sessionId: id, text, state: sent }
+        : { type: "answer", itemId: item.id, sessionId: id, text, state: sent };
+    }
+    default:
+      return { type: "state", state: s };
+  }
 };

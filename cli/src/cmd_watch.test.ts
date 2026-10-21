@@ -1,24 +1,21 @@
-// cli/src/cmd_watch.test.ts — `hub watch` through bin.run against a fake hub
-// (capture-style per docs/01 §Testing: fake hub over a temp socket, temp
-// dataRoot, piped/JSON stdout — never a real terminal, never sleeps):
-// machine-mode snapshot shape, piped static frame + muted hint, offline
-// degrade is not an exit, exit-code mapping.
+// cli/src/cmd_watch.test.ts — `hub watch` through bin.run against temp data
+// (capture-style per docs/01 §Testing: temp dataRoot, piped/JSON stdout —
+// never a real terminal, never sleeps): machine-mode snapshot shape, piped
+// static frame + muted hint, offline degrade is not an exit.
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { LogEntry, StatusFile } from "@yurifrl/hub";
+import type { StatusFile } from "@yurifrl/hub";
 import { run } from "./bin";
-import { applyKey, applyEvent, initialWatchState } from "./screens/watch";
-import { paneLines } from "./screens/watch";
 
 let dir: string;
 
 const sess = (over: Partial<StatusFile["sessions"][string]> = {}): StatusFile["sessions"][string] => ({
   status: "open",
   kind: "worker",
-  cwd: "/tmp",
+  cwd: "/tmp/proj",
   title: "test session",
   model: "test-model",
   phase: "working",
@@ -65,8 +62,9 @@ const writeData = (opts: { status?: StatusFile; logs?: Record<string, string[]> 
   }
 };
 
-const entryLine = (t: number, sessionId: string, kind: string, text: string): string =>
-  JSON.stringify({ t, sessionId, kind, text }) + "\n";
+/** disk-vocabulary line (docs/02 §logs): ISO `t`, kind prompt|tool|message|… */
+const diskLine = (iso: string, sessionId: string, kind: string, text: string): string =>
+  JSON.stringify({ t: iso, sessionId, kind, text }) + "\n";
 
 const capture = async (argv: string[]): Promise<{ code: number; out: string; err: string }> => {
   process.exitCode = undefined;
@@ -80,20 +78,24 @@ const configArg = (sock?: string): string[] => {
   return ["--config", cfg];
 };
 
+const statusOf = (over: Partial<StatusFile> = {}): StatusFile => ({
+  version: 1,
+  startedAt: new Date(0).toISOString(),
+  pid: 1,
+  nextAttentionId: 1,
+  sessions: { "s-alpha12345678": sess() },
+  attention: [],
+  archived: [],
+  ...over,
+});
+
 describe("watch — machine modes (docs/03 §hub watch Machine modes)", () => {
   it("--json prints a static snapshot (attention + sessions + last 50 entries), no alt-screen", async () => {
-    const status: StatusFile = {
-      version: 1,
-      startedAt: new Date(0).toISOString(),
-      pid: 1,
-      nextAttentionId: 1,
-      sessions: { "s-alpha12345678": sess() },
-      attention: [{ id: "att-1", sessionId: "s-alpha12345678", kind: "approval", text: "approve?", createdAt: new Date(0).toISOString() }],
-      archived: [],
-    };
     writeData({
-      status,
-      logs: { "s-alpha12345678": [entryLine(1, "s-alpha12345678", "tool_call", "bun test")] },
+      status: statusOf({
+        attention: [{ id: "att-1", sessionId: "s-alpha12345678", kind: "approval", text: "approve?", createdAt: new Date(0).toISOString() }],
+      }),
+      logs: { "s-alpha12345678": [diskLine("2026-08-30T18:00:00.000Z", "s-alpha12345678", "tool", "bun test")] },
     });
     const { code, out } = await capture([...configArg(), "--json", "watch"]);
     expect(code).toBe(0);
@@ -103,6 +105,8 @@ describe("watch — machine modes (docs/03 §hub watch Machine modes)", () => {
     expect(env.data.attention[0].kind).toBe("approval");
     expect(env.data.entries).toHaveLength(1);
     expect(env.data.entries[0].text).toBe("bun test");
+    expect(env.data.entries[0].kind).toBe("tool_call"); // normalized at the file boundary
+    expect(typeof env.data.entries[0].t).toBe("number");
     expect(out).not.toContain("\x1b[?1049h"); // never alt-screen
   });
 
@@ -116,64 +120,37 @@ describe("watch — machine modes (docs/03 §hub watch Machine modes)", () => {
 });
 
 describe("watch — piped stdout degrade (docs/03 §TTY degradation)", () => {
-  it("one static frame: header, attention rail rows, log pane, muted hint; exit 0", async () => {
-    const status: StatusFile = {
-      version: 1,
-      startedAt: new Date(0).toISOString(),
-      pid: 1,
-      nextAttentionId: 1,
-      sessions: { "s-alpha12345678": sess() },
-      attention: [{ id: "att-1", sessionId: "s-alpha12345678", kind: "approval", text: "approve deploy", createdAt: new Date(0).toISOString() }],
-      archived: [],
-    };
+  it("one static frame: sessions rail, selected chat, open question, muted hint; exit 0", async () => {
     writeData({
-      status,
-      logs: { "s-alpha12345678": [entryLine(1756562400000, "s-alpha12345678", "tool_call", "bun run build")] },
+      status: statusOf({
+        attention: [{ id: "att-1", sessionId: "s-alpha12345678", kind: "approval", text: "approve deploy", createdAt: new Date(0).toISOString() }],
+      }),
+      logs: {
+        "s-alpha12345678": [
+          diskLine("2026-08-30T18:00:00.000Z", "s-alpha12345678", "prompt", "deploy the canary"),
+          diskLine("2026-08-30T18:00:01.000Z", "s-alpha12345678", "tool", "bun run build"),
+        ],
+      },
     });
     const { code, out } = await capture([...configArg(), "watch"]);
     expect(code).toBe(0);
-    expect(out).toContain("NEEDS YOU");
-    expect(out).toContain("approve deploy");
+    expect(out).toContain("1 need you");
+    expect(out).toContain("proj"); // rail label = cwd basename
+    expect(out).toContain("deploy the canary");
     expect(out).toContain("bun run build");
+    expect(out).toContain("approve deploy");
     expect(out).toContain("run hub in a terminal for live view");
     expect(out).not.toContain("\x1b[?1049h");
   });
 
   it("piped with hub unreachable → still renders from disk, exit 0 (offline is a state)", async () => {
-    const status: StatusFile = {
-      version: 1,
-      startedAt: new Date(0).toISOString(),
-      pid: 1,
-      nextAttentionId: 1,
-      sessions: { "s-betaaaaaaaaaa": sess() },
-      attention: [],
-      archived: [],
-    };
-    writeData({ status, logs: { "s-betaaaaaaaaaa": [entryLine(1, "s-betaaaaaaaaaa", "tool_call", "make")] } });
+    writeData({
+      status: statusOf({ sessions: { "s-betaaaaaaaaaa": sess() } }),
+      logs: { "s-betaaaaaaaaaa": [diskLine("2026-08-30T18:00:00.000Z", "s-betaaaaaaaaaa", "tool", "make")] },
+    });
     const { code, out } = await capture([...configArg(), "watch"]); // no hub started
     expect(code).toBe(0);
     expect(out).toContain("make");
     expect(out).toContain("run hub in a terminal for live view");
   });
 });
-
-// ---- pure state-machine checks the host relies on (fake bus semantics) ----
-
-describe("watch — fake bus event → pane paint (pure, no sockets)", () => {
-  it("hub event frames appended via applyEvent land in paneLines", () => {
-    let s = initialWatchState(null);
-    s = applyEvent(s, { topic: "log", payload: { t: 1, sessionId: "s-a", kind: "tool_call", text: "event row" } });
-    const lines = paneLines(s, () => 20);
-    expect(lines).toHaveLength(1);
-    expect(lines[0]!.segs.map((x) => x[0]).join("")).toContain("event row");
-  });
-
-  it("q quits via applyKey → host exits 0", () => {
-    const s = initialWatchState(null);
-    expect(applyKey(s, { kind: "ctrl-c" }, 0).type).toBe("quit");
-    expect(applyKey(s, { kind: "char", char: "q" }, 0).type).toBe("quit");
-  });
-});
-
-// LogEntry unused import guard (shape checked in cmd_log.test.ts)
-export type { LogEntry };

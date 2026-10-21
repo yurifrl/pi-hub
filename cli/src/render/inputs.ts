@@ -7,7 +7,7 @@
 /** Logical keys the board family understands (docs/03 §inputs.ts type). */
 export type Key =
   | { kind: "char"; char: string }
-  | { kind: "up" | "down" | "enter" | "escape" | "backspace" | "left" | "right" }
+  | { kind: "up" | "down" | "enter" | "escape" | "backspace" | "left" | "right" | "tab" | "pageup" | "pagedown" }
   | { kind: "ctrl-c" }
   | { kind: "ignore" };
 
@@ -30,6 +30,7 @@ export const decodeKey = (buf: Uint8Array): Key => {
 
   // ctrl chars (raw mode delivers them as single bytes)
   if (b0 === 0x03) return { kind: "ctrl-c" };
+  if (b0 === 0x09) return { kind: "tab" };
   if (b0 === 0x0d || b0 === 0x0a) return { kind: "enter" };
   if (b0 === 0x7f || b0 === 0x08) return { kind: "backspace" };
   if (b0 === 0x1b) {
@@ -38,6 +39,13 @@ export const decodeKey = (buf: Uint8Array): Key => {
     if (buf[1] === 0x5b) {
       if (buf.length < 3) return { kind: "ignore" }; // partial sequence — nothing usable in-chunk
       const final = String.fromCharCode(buf[buf.length - 1]!);
+      if (final === "~") {
+        // esc [ 5 ~ / esc [ 6 ~ — PgUp / PgDn; other tilde keys (home/del/…) ignored
+        const params = new TextDecoder().decode(buf.slice(2, buf.length - 1));
+        if (params === "5") return { kind: "pageup" };
+        if (params === "6") return { kind: "pagedown" };
+        return { kind: "ignore" };
+      }
       const arrow = ARROW_FINALS[final];
       if (arrow !== undefined) return { kind: arrow } as Key;
       return { kind: "ignore" }; // unknown multi-byte → never leaks as text

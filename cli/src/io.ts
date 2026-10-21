@@ -5,7 +5,7 @@
 import { createInterface, type Interface } from "node:readline";
 
 export type CommandIo = {
-  stdin: NodeJS.ReadableStream & { isTTY?: boolean };
+  stdin: NodeJS.ReadableStream & { isTTY?: boolean; setRawMode?: (on: boolean) => void };
   stdout: NodeJS.WritableStream;
   stderr: NodeJS.WritableStream;
 };

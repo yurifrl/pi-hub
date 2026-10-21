@@ -7,6 +7,7 @@
 // (docs/01 §Testing); the interval runs only in the concrete host wiring.
 
 import { readFileSync, statSync } from "node:fs";
+import { parseLogLines as parseLines } from "./log_entry";
 import type { LogEntry } from "@yurifrl/hub";
 
 /** One decoded follow step — the caller renders incrementally. */
@@ -22,21 +23,6 @@ export type LogFollower = {
   /** one tail step: entries appended since the last call */
   step(): FollowStep;
 };
-
-const entryOk = (v: unknown): v is LogEntry => v !== null && typeof v === "object" && "kind" in (v as object);
-
-const parseLines = (body: string): LogEntry[] =>
-  body
-    .split("\n")
-    .filter((l) => l.trim().length > 0)
-    .map((l) => {
-      try {
-        return JSON.parse(l);
-      } catch {
-        return null;
-      }
-    })
-    .filter(entryOk);
 
 /** Real host IO — injected so tests can fake the filesystem layer. */
 export type FollowIo = {
@@ -75,7 +61,8 @@ export const makeLogFollower = (io: FollowIo, path: string): LogFollower => {
         const entries = parseLines(io.read(path));
         offset = st.size;
         return { entries, rotated: true, truncated: false };
-      }      if (st.size < offset) {
+      }
+      if (st.size < offset) {
         // truncate: reset and re-read
         offset = 0;
         const entries = parseLines(io.read(path));
