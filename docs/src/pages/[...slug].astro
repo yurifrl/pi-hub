@@ -1,0 +1,42 @@
+---
+// Single-page entry: every docs/*.md becomes a page at /<name>.html
+// (01-architecture.md → /01-architecture.html), rendered inside the shared
+// shell. Static eager glob import is required for Astro to render markdown.
+import Shell from "../components/Shell.astro";
+
+// docs/*.md → { frontmatter, Content }, keyed by slug. getStaticPaths is
+// hoisted to an isolated module by Astro, so everything it needs lives inside it.
+export function getStaticPaths() {
+    const modules = import.meta.glob("/*.md", { eager: true }) as Record<string, any>;
+    const bySlug = new Map(Object.entries(modules).map(([p, m]) => [
+        p.replace(/^\//, "").replace(/\.md$/, ""),
+        { frontmatter: m.frontmatter ?? {}, Content: m.Content },
+    ]));
+    const raws = import.meta.glob("/*.md", { eager: true, query: "?raw", import: "default" }) as Record<string, string>;
+    const firstHeading = (slug: string) => {
+        const raw = raws[`/${slug}.md`];
+        return raw ? /^#\s+(.+)$/m.exec(raw)?.[1] : undefined;
+    };
+    return [...bySlug.entries()].map(([slug, m]) => ({
+        params: { slug },
+        props: {
+            title: m.frontmatter.title ?? firstHeading(slug) ?? slug,
+            desc: m.frontmatter.description ?? "",
+            Content: m.Content,
+            entries: [...bySlug.entries()].map(([s, mm]) => ({
+                slug: s,
+                title: mm.frontmatter.title ?? firstHeading(s) ?? s,
+                desc: mm.frontmatter.description ?? "",
+            })),
+        },
+    }));
+}
+
+const { slug } = Astro.params;
+const { title, desc, Content, entries } = Astro.props as any;
+---
+<Shell entries={entries} activeSlug={String(slug)} title={title} description={desc}>
+    <article class="prose">
+        <Content />
+    </article>
+</Shell>

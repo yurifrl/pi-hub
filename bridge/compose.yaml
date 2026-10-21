@@ -1,0 +1,18 @@
+# Hermes → pi-hub bridge. Start the hub FIRST (in omp: /hub-start) —
+# hub.sock must exist before `up` or the single-file mount fails.
+# Single-file socket mount is the transport that works under Apple containers
+# (docs/07-hermes-bridge.md §Transport: dir mount = ENOTSUP, TCP = loopback-only).
+services:
+  hermes:
+    build:
+      context: .
+      args:
+        HERMES_AGENT_VERSION: "0.19.0"
+    # /hub-start chmods the socket 0777 after listen; the container's hermes user connects.
+    user: "1000:1000"
+    volumes:
+      - ${HOME}/.hub/hub.sock:/run/hub.sock
+      - ./hermes-hub-plugin:/home/hermes/.hermes/plugins/hermes-hub:ro
+    environment:
+      HUB_SOCKET: /run/hub.sock
+    restart: unless-stopped

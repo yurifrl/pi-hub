@@ -1,0 +1,40 @@
+---
+// Shared shell for every docs page: sidebar nav, search (⌘K), client script.
+// One component — index and slug pages both slot their main content in.
+interface Entry { slug: string; title: string; desc: string }
+interface Props { entries: Entry[]; activeSlug?: string; title?: string }
+const { entries, activeSlug, title = "pi-hub docs" } = Astro.props;
+const SEARCH_PAGES = entries.map((e) => ({ title: e.title, description: e.desc, url: `/${e.slug}.html` }));
+---
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>{title}</title>
+        <link rel="stylesheet" href="/assets/docs.css" />
+    </head>
+    <body>
+        <div class="docs-shell">
+            <aside class="docs-sidebar">
+                <a class="docs-home" href="/index.html">pi-hub docs</a>
+                <nav class="docs-nav">
+                    {entries.map((e) => (
+                        <a class:list={["docs-link", { active: e.slug === activeSlug }]} href={`/${e.slug}.html`}>{e.title}</a>
+                    ))}
+                </nav>
+                <button class="docs-search-btn" data-search-open type="button">Search…</button>
+            </aside>
+            <main class="docs-main">
+                <slot />
+            </main>
+        </div>
+        <div class="search-dialog" data-search-dialog hidden>
+            <div class="search-panel">
+                <div class="search-box"><input data-search-input type="search" placeholder="Search documentation" autocomplete="off"><kbd>Esc</kbd></div>
+                <div class="search-results" data-search-results></div>
+            </div>
+        </div>
+        <script type="application/json" id="search-pages" set:html={JSON.stringify(SEARCH_PAGES)}></script>
+        <script is:inline src="/assets/docs.js"></script>
+    </body>
+</html>

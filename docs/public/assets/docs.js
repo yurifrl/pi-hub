@@ -1,5 +1,8 @@
 (() => {
-  const pages = window.SEARCH_PAGES || [];
+  const pages = (() => {
+    const tag = document.getElementById('search-pages');
+    return tag ? JSON.parse(tag.textContent || '[]') : [];
+  })();
   const dialog = document.querySelector('[data-search-dialog]');
   const input = document.querySelector('[data-search-input]');
   const results = document.querySelector('[data-search-results]');

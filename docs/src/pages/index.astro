@@ -1,0 +1,33 @@
+---
+// docs index: ordered card grid of every markdown doc in this directory.
+// Markdown files ARE the site — no copies, no content collection (README §Docs).
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
+import Shell from "../components/Shell.astro";
+
+const docsDir = path.resolve(import.meta.dirname, "..", "..");
+const entries = await Promise.all(
+    (await readdir(docsDir)).filter((f) => f.endsWith(".md")).sort().map(async (f) => {
+        const raw = await readFile(path.join(docsDir, f), "utf8");
+        return {
+            slug: f.replace(/\.md$/, ""),
+            title: /^title:\s*(.+)$/m.exec(raw)?.[1] ?? /^#\s+(.+)$/m.exec(raw)?.[1] ?? f.replace(/\.md$/, ""),
+            desc: /^description:\s*(.+)$/m.exec(raw)?.[1] ?? "",
+        };
+    }),
+);
+---
+<Shell entries={entries}>
+    <section class="docs-header">
+        <h1>pi-hub docs</h1>
+        <p>One docs tree: architecture, data contracts, CLI, web, plugin, agents — and the Hermes bridge.</p>
+    </section>
+    <section class="card-grid">
+        {entries.map((e) => (
+            <a class="doc-card" href={`/${e.slug}.html`}>
+                <div class="doc-card-title">{e.title}</div>
+                <div class="doc-card-desc">{e.desc}</div>
+            </a>
+        ))}
+    </section>
+</Shell>

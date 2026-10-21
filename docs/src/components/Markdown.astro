@@ -1,0 +1,9 @@
+---
+// Renders markdown body text to HTML at build time via Astro's markdown pipeline
+// (same remark/rehype chain as content collections — no runtime deps).
+import { marked } from "marked";
+interface Props { content: string }
+const { content } = Astro.props;
+const html = await marked.parse(content, { async: true });
+---
+<Fragment set:html={html} />

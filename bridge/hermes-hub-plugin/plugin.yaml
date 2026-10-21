@@ -1,0 +1,5 @@
+# Hermes Agent 0.19.x (renovate-bumped pin, mirrors k8s/images/hermes/Dockerfile)
+name: hermes-hub
+version: 0.1.0
+description: Bridge Hermes to pi-hub's hub.sock — hub ops as a tool + per-turn hub status context.
+entry: register

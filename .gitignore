@@ -6,7 +6,7 @@ node_modules/
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
 
-# docs site
-docs-site/node_modules/
-docs-site/dist/
-docs-site/.astro/
+# docs site — single docs/ tree, previewed via astro static build
+docs/node_modules/
+docs/dist/
+docs/.astro/

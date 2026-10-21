@@ -82,14 +82,11 @@ kept — shutdown does not archive them).
 | [docs/04-web.md](docs/04-web.md) | Hub Console: routes, SSE contract, pages |
 | [docs/05-omp-plugin.md](docs/05-omp-plugin.md) | plugin entry, reporter, `hub_*` tools, widget, commands, env vars, anti-recursion |
 | [docs/06-agents-and-skills.md](docs/06-agents-and-skills.md) | hub agent (watcher), `agentSurface` contract, skills, cadence/budgets |
+| [docs/07-hermes-bridge.md](docs/07-hermes-bridge.md) | Hermes bridge: container → `hub.sock` on the host, ops from inside the agent |
 
 `spec.html` is the rendered integration spec; `PLAN.md` is the index.
 
-## Docs site
-
-`docs-site/` is a small Astro site that renders `docs-site/src/content/docs/*.md`
-(the Hermes bridge design lives there) with an index-first card grid and
-infinite scroll. One command builds and serves it at `http://127.0.0.1:4321`:
+Preview all docs as a single local site at `http://127.0.0.1:4321`:
 
 ```sh
 task docs
