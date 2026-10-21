@@ -36,6 +36,10 @@ export type WatchState = {
   scroll: number;
   /** last known status.json (fallback tick re-reads; hub loss freezes it) */
   status: StatusFile | null;
+  /** archived + log-only rail rows, newest first (docs/03 §watch rail) */
+  extras: RailExtra[];
+  /** chat message-kind filter, cycled with f (docs/03 §watch chat) */
+  filter: ChatFilter;
   /** hub connection lost */
   offline: boolean;
   orientation: string | undefined;
@@ -47,30 +51,76 @@ export type ViewMetrics = { pageRows: number; maxScroll: number };
 
 export const MAX_ENTRIES = 400;
 
-/** Session ids in status.json insertion order — the rail's order and the 1-9 basis. */
-export const railIds = (status: StatusFile | null): string[] => (status === null ? [] : Object.keys(status.sessions));
+/** One rail row outside the live sessions map: a closed (archived) or log-only session. */
+export type RailExtra = { id: string; phase: "closed" | "log" };
+
+/** Chat message-kind filter (docs/03 §watch chat): f cycles. */
+export type ChatFilter = "all" | "user" | "assistant" | "tool";
+
+export const FILTERS: readonly ChatFilter[] = ["all", "user", "assistant", "tool"];
+
+/** `f`: all → user → assistant → tool → all. */
+export const cycleFilter = (filter: ChatFilter): ChatFilter => FILTERS[(FILTERS.indexOf(filter) + 1) % FILTERS.length]!;
+
+/** Rail cap for extras (docs/03 §watch: the 200 most recent log-only sessions). */
+export const MAX_EXTRAS = 200;
+
+/**
+ * The rail's session ids: status.json sessions first (insertion order — the
+ * 1-9 basis), then archived + log-only extras not already listed, newest
+ * first, capped at MAX_EXTRAS (docs/03 §watch rail: every session is visible).
+ */
+export const railIds = (status: StatusFile | null, extra: RailExtra[] = []): string[] => {
+  const live = status === null ? [] : Object.keys(status.sessions);
+  const known = new Set(live);
+  const rest: string[] = [];
+  for (const e of extra) {
+    if (known.has(e.id)) continue;
+    known.add(e.id);
+    rest.push(e.id);
+  }
+  return [...live, ...rest].slice(0, live.length + MAX_EXTRAS);
+};
+
+/**
+ * Archived + log-only rail extras from status `archived[]` and the most
+ * recent log files, newest first (docs/03 §watch rail). The host computes
+ * recentLogIds; here we just merge and order.
+ */
+export const railExtras = (status: StatusFile | null, recentLogIds: string[]): RailExtra[] => {
+  const archived = (status?.archived ?? []).map((a) => ({ id: a.id, phase: "closed" as const }));
+  const known = new Set([...(status === null ? [] : Object.keys(status.sessions)), ...archived.map((a) => a.id)]);
+  const seen = new Set(archived.map((a) => a.id));
+  const logs = recentLogIds.filter((id) => !known.has(id) && !seen.has(id) && seen.add(id)).map((id) => ({ id, phase: "log" as const }));
+  return [...archived, ...logs];
+};
 
 /** Keep `selected` valid against the current session set; selecting reads the session. */
-export const ensureSelection = (s: WatchState): WatchState => {
-  const ids = railIds(s.status);
+export const ensureSelection = (s: WatchState, extra: RailExtra[] = []): WatchState => {
+  const ids = railIds(s.status, extra);
   if (ids.length === 0) return s.selected === null ? s : { ...s, selected: null, scroll: 0 };
   if (s.selected !== null && ids.includes(s.selected)) return s;
   return selectSession(s, ids[0]!);
 };
 
-export const initialWatchState = (status: StatusFile | null): WatchState =>
-  ensureSelection({
-    focus: "rail",
-    selected: null,
-    entries: {},
-    unread: {},
-    drafts: {},
-    scroll: 0,
-    status,
-    offline: false,
-    orientation: status?.digest,
-    notice: null,
-  });
+export const initialWatchState = (status: StatusFile | null, extra: RailExtra[] = []): WatchState =>
+  ensureSelection(
+    {
+      focus: "rail",
+      selected: null,
+      entries: {},
+      unread: {},
+      drafts: {},
+      scroll: 0,
+      status,
+      extras: extra,
+      filter: "all",
+      offline: false,
+      orientation: status?.digest,
+      notice: null,
+    },
+    extra,
+  );
 
 /** Make `id` the open conversation: scroll to the bottom, mark it read. */
 export const selectSession = (s: WatchState, id: string): WatchState => {
@@ -88,19 +138,23 @@ export const sessionName = (id: string, rec: SessionRecord | undefined): string 
   rec?.cwd.split("/").filter((p) => p.length > 0).pop() ?? id.slice(0, 8);
 
 /**
- * The rail symbol: needs-you wins; otherwise the phase — working ●, waiting
- * for a reply ?, idle/done ✓, blocked ✖. A closing session is a muted dot.
+ * The rail symbol: needs-you wins; otherwise the phase — one icon per state,
+ * never color alone (docs/03 §watch rail): working ▶, waiting ?, idle ○,
+ * done ✓, blocked ✖; archived ⌛, log-only ◌, closing ·.
  */
 export const sessionGlyph = (rec: SessionRecord | undefined, needsYou: boolean): { glyph: string; token: ThemeToken } => {
-  if (rec === undefined || rec.status === "closing") return { glyph: "·", token: "muted" };
+  if (rec === undefined) return { glyph: "◌", token: "muted" };
+  if (rec.status === "closing") return { glyph: "·", token: "muted" };
   if (needsYou) return { glyph: "⚠", token: "warn" };
   switch (rec.phase) {
     case "working":
-      return { glyph: "●", token: "accent" };
+      return { glyph: "▶", token: "accent" };
     case "waiting":
       return { glyph: "?", token: "warn" };
     case "blocked":
       return { glyph: "✖", token: "err" };
+    case "idle":
+      return { glyph: "○", token: "muted" };
     default:
       return { glyph: "✓", token: "ok" };
   }
@@ -192,9 +246,10 @@ export const applyKey = (prev: WatchState, key: Key, view: ViewMetrics): KeyActi
     case "char": {
       if (key.char === "q") return { type: "quit" };
       if (key.char >= "1" && key.char <= "9") {
-        const id = railIds(s.status)[Number.parseInt(key.char, 10) - 1];
+        const id = railIds(s.status, s.extras)[Number.parseInt(key.char, 10) - 1];
         return { type: "state", state: id === undefined ? s : selectSession(s, id) };
       }
+      if (key.char === "f") return { type: "state", state: { ...s, filter: cycleFilter(s.filter), scroll: 0 } };
       if (key.char === "d") return dismissSelected(s);
       return { type: "state", state: s };
     }

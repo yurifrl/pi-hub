@@ -27,6 +27,8 @@ import {
   ensureSelection,
   initialWatchState,
   mergeEntries,
+  MAX_EXTRAS,
+  railExtras,
   railIds,
   sessionName,
   type Notice,
@@ -62,8 +64,9 @@ export const cmdWatch = async (ctx: CommandContext): Promise<void> => {
   // piped stdout → one static frame + muted hint, exit 0 (docs/03 §TTY degradation)
   if (!stdoutIsTty) {
     return emitResult(() => {
-      let s = initialWatchState(status);
-      for (const id of railIds(status)) s = mergeEntries(s, id, ctx.files.logEntries(id), false);
+      const extra = railExtras(status, ctx.files.recentLogIds(MAX_EXTRAS));
+      let s = initialWatchState(status, extra);
+      for (const id of railIds(status, extra)) s = mergeEntries(s, id, ctx.files.logEntries(id), false);
       for (const line of plainSnapshot(s, 100)) ctx.io.stdout.write(line + "\n");
       ctx.io.stdout.write(renderRow(mutedRow(PIPED_HINT), "plain") + "\n");
     });
@@ -106,7 +109,8 @@ const runWatchScreen = async (ctx: CommandContext, status0: StatusFile | null): 
     (on) => stdin.setRawMode?.(on),
   );
 
-  let state = initialWatchState(status0);
+  const extras0 = railExtras(status0, ctx.files.recentLogIds(MAX_EXTRAS));
+  let state = initialWatchState(status0, extras0);
   let view: ViewMetrics = { pageRows: 10, maxScroll: 0 };
   let quit = false;
 
@@ -173,28 +177,28 @@ const runWatchScreen = async (ctx: CommandContext, status0: StatusFile | null): 
     if (quit) return;
     if (listing.ok) {
       const data = listing.result as Partial<StatusFile>;
-      state = {
-        ...state,
-        offline: false,
-        orientation: data.digest,
-        status: {
-          version: data.version ?? 1,
-          startedAt: data.startedAt ?? new Date(0).toISOString(),
-          pid: data.pid ?? 0,
-          nextAttentionId: data.nextAttentionId ?? 0,
-          sessions: data.sessions ?? {},
-          attention: data.attention ?? [],
-          archived: data.archived ?? [],
-          ...(data.digest !== undefined ? { digest: data.digest } : {}),
-          ...(data.agentSession !== undefined ? { agentSession: data.agentSession } : {}),
-        },
+      const status = {
+        version: data.version ?? 1,
+        startedAt: data.startedAt ?? new Date(0).toISOString(),
+        pid: data.pid ?? 0,
+        nextAttentionId: data.nextAttentionId ?? 0,
+        sessions: data.sessions ?? {},
+        attention: data.attention ?? [],
+        archived: data.archived ?? [],
+        ...(data.digest !== undefined ? { digest: data.digest } : {}),
+        ...(data.agentSession !== undefined ? { agentSession: data.agentSession } : {}),
       };
+      // Session set changed → re-scan archived + recent log files so new omp
+      // sessions appear in the rail (docs/03 §watch rail).
+      const extras =
+        status.digest !== state.orientation ? railExtras(status, ctx.files.recentLogIds(MAX_EXTRAS)) : state.extras;
+      state = { ...state, offline: false, orientation: data.digest, status, extras };
     } else {
       state = { ...state, offline: true };
       const disk = ctx.files.status();
       if (disk !== null) state = { ...state, status: disk };
     }
-    state = ensureSelection(state);
+    state = ensureSelection(state, state.extras);
     schedulePaint();
   };
   void refresh();
@@ -206,6 +210,13 @@ const runWatchScreen = async (ctx: CommandContext, status0: StatusFile | null): 
   const seenFirst = new Set<string>();
   const tailTimer = setInterval(() => {
     let next = state;
+    // Extras (archived / log-only) get no followers — their chat is read once,
+    // lazily, when selected (docs/03 §watch rail: rail-only until visited).
+    const selected = state.selected;
+    if (selected !== null && state.entries[selected] === undefined && !followers.has(selected) &&
+        state.status?.sessions[selected] === undefined) {
+      next = mergeEntries(next, selected, ctx.files.logEntries(selected), false);
+    }
     for (const id of railIds(state.status)) {
       let f = followers.get(id);
       if (f === undefined) {

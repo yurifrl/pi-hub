@@ -75,6 +75,7 @@ const stubCtx = (opts: { stdoutTty?: boolean; stdinTty?: boolean; listResult?: B
       logEntries: () => [],
       summaryLines: () => [],
       status: () => null,
+      recentLogIds: () => [],
     },
     io: { stdin: stdin as unknown as NodeJS.ReadableStream, stdout, stderr },
     cmd: async (op, args) => {

@@ -80,6 +80,21 @@ export const readKeys = (
   const queue: Key[] = [];
   const resolvers: ((k: Key | null) => void)[] = [];
   let ended = false;
+  // Escape sequences can arrive split across read chunks (tmux send-keys,
+  // slow terminals): a chunk ending inside an unfinished CSI is held back and
+  // merged with the next chunk instead of decoding as `escape` + garbage.
+  let pending: number[] = [];
+
+  const partialEscape = (bytes: number[]): boolean => {
+    const esc = bytes.lastIndexOf(0x1b);
+    if (esc < 0) return false;
+    const tail = bytes.slice(esc);
+    if (tail.length === 1) return true; // lone trailing ESC
+    if (tail[1] !== 0x5b && tail[1] !== 0x4f) return false; // '[' or 'O' only
+    const final = tail[tail.length - 1]!;
+    const done = (final >= 0x40 && final <= 0x7e) && tail.length > 2;
+    return !done;
+  };
 
   const pump = (k: Key | null): void => {
     if (k === null) {
@@ -93,9 +108,31 @@ export const readKeys = (
 
   stdin.on("data", (chunk: Buffer | string) => {
     const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : new Uint8Array(chunk);
-    pump(decodeKey(bytes));
+    const wasLoneEsc = pending.length === 1 && pending[0] === 0x1b;
+    const merged = pending.length > 0 ? Uint8Array.from([...pending, ...bytes]) : bytes;
+    pending = [];
+    if (merged.length > 0 && merged.length <= 64 && partialEscape(Array.from(merged))) {
+      pending = Array.from(merged); // hold back the unfinished sequence
+      return;
+    }
+    // A lone ESC held from the previous chunk followed by a printable char is
+    // an escape press then that char (tmux send-keys, fast typing); a
+    // completed CSI ([ or O introducer) still decodes whole.
+    const frag = Array.from(merged);
+    if (wasLoneEsc && frag.length > 1 && frag[0] === 0x1b && !(frag[1] === 0x5b || frag[1] === 0x4f)) {
+      pump(decodeKey(new Uint8Array([0x1b])));
+      pump(decodeKey(new Uint8Array(frag.slice(1))));
+      return;
+    }
+    pump(decodeKey(merged));
   });
-  stdin.on("end", () => pump(null));
+  stdin.on("end", () => {
+    if (pending.length > 0) {
+      pump(decodeKey(Uint8Array.from(pending))); // trailing fragment decodes or ignores
+      pending = [];
+    }
+    pump(null);
+  });
   stdin.on("close", () => pump(null));
 
   enableRaw(true);

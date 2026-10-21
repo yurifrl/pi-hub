@@ -3,7 +3,7 @@
 // directly — no socket, work while the hub is down. The CLI never writes
 // under ~/.hub (docs/03 §bin Decision: single-writer rule).
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { parseLogLines } from "./log_entry";
 import { join } from "node:path";
 import type { LogEntry, StatusFile, SummaryLine } from "@yurifrl/hub";
@@ -16,6 +16,8 @@ export type HubFiles = {
   summaryLines(tail?: number): SummaryLine[];
   /** status.json — null when absent (hub not started yet) */
   status(): StatusFile | null;
+  /** the `limit` most recently modified logs/<id>.jsonl ids, newest first (watch rail) */
+  recentLogIds(limit: number): string[];
 };
 
 /** One JSONL line → parsed value or null (skip blanks and corrupt lines). */
@@ -63,6 +65,30 @@ export const makeFileReader = (config: HubCliConfig): HubFiles => ({
     } catch {
       return null;
     }
+  },
+
+  recentLogIds(limit) {
+    const dir = join(config.dataRoot, "logs");
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      return [];
+    }
+    return names
+      .filter((n) => n.endsWith(".jsonl"))
+      .map((n) => {
+        let mtime = 0;
+        try {
+          mtime = statSync(join(dir, n)).mtimeMs;
+        } catch {
+          mtime = 0;
+        }
+        return { id: n.slice(0, -".jsonl".length), mtime };
+      })
+      .sort((a, b) => b.mtime - a.mtime)
+      .slice(0, Math.max(0, limit))
+      .map((e) => e.id);
   },
 });
 

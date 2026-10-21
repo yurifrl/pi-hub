@@ -10,6 +10,8 @@ import {
   railIds,
   sessionGlyph,
   sessionName,
+  type ChatFilter,
+  type RailExtra,
   type ViewMetrics,
   type WatchState,
 } from "../screens/watch";
@@ -67,35 +69,66 @@ export const toolSummary = (text: string): string => {
 };
 
 /**
- * Conversation → display lines. Messages get a `time who` header and an
- * indented body; tool calls are one muted, ellipsized line each and empty
- * system rows are dropped, so a busy agent does not drown the dialogue.
+ * Conversation → display lines, narrowed to `filter` (docs/03 §watch chat:
+ * all | user | assistant | tool). Messages get a `time who` header and an
+ * indented body; tool calls are one muted, ellipsized line each — adjacent
+ * identical rows (tool retries write byte-equal lines) collapse to `×N` — and
+ * empty system rows are dropped, so a busy agent does not drown the dialogue.
  */
-export const chatLines = (entries: LogEntry[], who: string, hue: number, width: number): Cell[][] => {
+export const chatLines = (entries: LogEntry[], who: string, hue: number, width: number, filter: ChatFilter = "all"): Cell[][] => {
   const out: Cell[][] = [];
   const body = Math.max(1, width - 2);
-  entries.forEach((e, i) => {
-    const prev = entries[i - 1];
+  const keep = (k: LogEntry["kind"]): boolean =>
+    filter === "all" ||
+    (filter === "user" && k === "user_message") ||
+    (filter === "assistant" && k === "assistant_message") ||
+    (filter === "tool" && k === "tool_call");
+  let lastTool: { text: string; count: number } | null = null;
+  const flushTool = (): void => {
+    if (lastTool === null) return;
+    const { text, count } = lastTool;
+    const tail: Seg = count > 1 ? [` ×${count}`, "muted"] : ["", "muted"];
+    out.push(cellsOf([["  ▶ ", "muted"], [clip(text, Math.max(1, width - 4 - (count > 1 ? 4 : 0))), "muted"], tail]));
+    lastTool = null;
+  };
+  entries.forEach((e) => {
+    if (e.kind === "tool_call") {
+      if (!keep(e.kind)) return;
+      const text = toolSummary(e.text);
+      if (text.trim() === "") return;
+      if (lastTool !== null && lastTool.text === text) {
+        lastTool.count += 1;
+        return;
+      }
+      flushTool();
+      lastTool = { text, count: 1 };
+      return;
+    }
+    flushTool();
+    if (!keep(e.kind)) return;
     if (e.kind === "user_message" || e.kind === "assistant_message") {
-      if (prev !== undefined && out.length > 0) out.push([]);
+      if (out.length > 0) out.push([]);
       const you = e.kind === "user_message";
-      out.push(cellsOf([[clockOf(e.t), "muted"], [" "], [you ? "you" : who, you ? "accent" : hue, true]]));
+      out.push(cellsOf([[clockOf(e.t), "muted"], [" "], [you ? "❯ you" : `◆ ${who}`, you ? "accent" : hue, true]]));
       for (const l of wrapLines(e.text, body)) out.push(cellsOf([["  "], [l]]));
       return;
     }
-    const tool = e.kind === "tool_call";
-    const shown = tool ? toolSummary(e.text) : e.text;
-    if (shown.trim() === "") return;
-    out.push(cellsOf([[tool ? "  ▶ " : "  · ", "muted"], [clip(shown, Math.max(1, width - 4)), "muted"]]));
+    if (e.text.trim() === "") return;
+    out.push(cellsOf([["  · ", "muted"], [clip(e.text, Math.max(1, width - 4)), "muted"]]));
   });
+  flushTool();
   return out;
 };
+
+/** Row icon for an archived (⌛) or log-only (◌) rail extra, never color alone. */
+export const extraGlyph = (phase: RailExtra["phase"]): { glyph: string; token: ThemeTokenOrHue } =>
+  phase === "closed" ? { glyph: "⌛", token: "muted" } : { glyph: "◌", token: "muted" };
 
 export type WatchView = { rows: Cell[][]; view: ViewMetrics };
 
 /** Compose one frame of `cols`×`rows` cells. */
 export const paintWatchView = (s: WatchState, cols: number, rows: number, now: number): WatchView => {
-  const ids = railIds(s.status);
+  const ids = railIds(s.status, s.extras);
   const sessions = s.status?.sessions ?? {};
   const needYou = (s.status?.attention ?? []).filter((a) => a.resolvedAt === undefined).length;
   const rw = railWidth(cols);
@@ -115,27 +148,35 @@ export const paintWatchView = (s: WatchState, cols: number, rows: number, now: n
   ids.forEach((id, i) => {
     const rec = sessions[id];
     const sel = id === s.selected;
-    const { glyph, token } = sessionGlyph(rec, openAttention(s, id).length > 0);
+    const { glyph, token } = rec !== undefined ? sessionGlyph(rec, openAttention(s, id).length > 0) : extraGlyph((s.extras.find((e) => e.id === id) ?? { id, phase: "log" }).phase);
     const unread = s.unread[id] ?? 0;
     const badge = unread > 0 ? ` +${unread > 99 ? "99" : unread}` : "";
     const nameW = Math.max(1, rw - 4 - Array.from(badge).length);
     const name = clip(sessionName(id, rec), nameW);
     const pad = " ".repeat(Math.max(0, nameW - Array.from(name).length));
     void i;
-    rail.push(cellsOf([[sel ? "▸" : " ", "accent", true], [glyph, token, true], [" "], [name + pad, hueIndex(id), sel], [badge, "accent", true]]));
+    rail.push(cellsOf([[sel ? "▸" : " ", "accent", true], [glyph, token, true], [" "], [name + pad, rec === undefined ? "muted" : hueIndex(id), sel], [badge, "accent", true]]));
   });
 
   // ---- chat ----
   const rec = s.selected === null ? undefined : sessions[s.selected];
+  const extra = s.selected === null ? undefined : s.extras.find((e) => e.id === s.selected);
   const title: Seg[] =
-    s.selected === null || rec === undefined
+    s.selected === null
       ? [[" waiting for sessions…", "muted"]]
-      : [
-          [` ${sessionName(s.selected, rec)}`, hueIndex(s.selected), true],
-          [` · ${rec.phase}`, sessionGlyph(rec, false).token],
-          ...[rec.model, clip(rec.title, 40)].filter((t) => t.trim() !== "").map((t): Seg => [` · ${t}`, "muted"]),
-        ];
-  const all = s.selected === null ? [] : chatLines(s.entries[s.selected] ?? [], sessionName(s.selected, rec), hueIndex(s.selected), cw);
+      : rec !== undefined
+        ? [
+            [` ${sessionName(s.selected, rec)}`, hueIndex(s.selected), true],
+            [` · ${rec.phase}`, sessionGlyph(rec, false).token],
+            ...[rec.model, clip(rec.title, 40)].filter((t) => t.trim() !== "").map((t): Seg => [` · ${t}`, "muted"]),
+          ]
+        : extra !== undefined
+          ? [[` ${sessionName(s.selected, undefined)} · ${extra.phase === "closed" ? "archived" : "log-only"}`, "muted"]]
+          : [[" waiting for sessions…", "muted"]];
+  const all =
+    s.selected === null
+      ? []
+      : chatLines(s.entries[s.selected] ?? [], sessionName(s.selected, rec), hueIndex(s.selected), cw, s.filter);
   const asks = s.selected === null ? [] : openAttention(s, s.selected);
 
   const askRows = asks.length > 0 ? 1 : 0;
@@ -167,7 +208,7 @@ export const paintWatchView = (s: WatchState, cols: number, rows: number, now: n
       ? asks.length > 0
         ? "⏎ answer · esc rail · PgUp/PgDn scroll"
         : "⏎ send · esc rail · PgUp/PgDn scroll"
-      : "↑↓ select · 1-9 jump · ⏎ write · PgUp/PgDn scroll · d dismiss · q quit";
+      : `↑↓ select · 1-9 jump · ⏎ write · f filter:${s.filter} · PgUp/PgDn scroll · d dismiss · q quit`;
   const footer: Seg[] = s.notice !== null ? [[` ${s.notice.text}`, s.notice.tone]] : [[` ${hint}`, "muted"]];
 
   // ---- assemble ----

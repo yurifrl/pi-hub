@@ -250,11 +250,11 @@ describe("applyEvent", () => {
 });
 
 describe("symbols and names", () => {
-  it("needs-you outranks phase; phases map to distinct symbols", () => {
+  it("needs-you outranks phase; phases map to distinct icons", () => {
     expect(sessionGlyph(sess(), true).glyph).toBe("⚠");
-    expect(sessionGlyph(sess({ phase: "working" }), false).glyph).toBe("●");
+    expect(sessionGlyph(sess({ phase: "working" }), false).glyph).toBe("▶");
     expect(sessionGlyph(sess({ phase: "waiting" }), false).glyph).toBe("?");
-    expect(sessionGlyph(sess({ phase: "idle" }), false).glyph).toBe("✓");
+    expect(sessionGlyph(sess({ phase: "idle" }), false).glyph).toBe("○");
     expect(sessionGlyph(sess({ phase: "blocked" }), false).glyph).toBe("✖");
     expect(sessionGlyph(sess({ status: "closing" }), false).glyph).toBe("·");
   });
