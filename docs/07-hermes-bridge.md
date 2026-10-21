@@ -14,8 +14,8 @@ is required to host the socket:
 bridge/run
 ```
 
-Before launching the container it probes the hub with `hub list` (a full
-handshake + reply round-trip is liveness — docs/03 §Exit codes: exit 2 =
+Before launching the container it probes the hub with `hub ping` (a full
+handshake + cmd/reply round-trip is liveness — docs/03 §Exit codes: exit 2 =
 unavailable-hub):
 
 - exit 0 — a hub is already serving on `~/.hub/hub.sock`; reuse it.

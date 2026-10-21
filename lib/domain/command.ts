@@ -40,7 +40,8 @@ export type OpName =
   | "archive"
   | "logTail"
   | "summaries"
-  | "agent";
+  | "agent"
+  | "ping";
 
 export const OP_NAMES: readonly OpName[] = [
   "list",
@@ -55,6 +56,7 @@ export const OP_NAMES: readonly OpName[] = [
   "logTail",
   "summaries",
   "agent",
+  "ping",
 ] as const;
 
 export type Caller = "cli" | "web" | "plugin" | "agent";

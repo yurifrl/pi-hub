@@ -22,6 +22,7 @@ hub
 ├─ archive [id]                  list the archive / close+archive a session
 ├─ watch                         full-screen split console
 ├─ agent [--surface S]           start the hub agent
+├─ ping                          side-effect-free liveness probe (exit 0 live / 2 dead)
 └─ web [--port P]                serve the Hub Console
 ```
 
@@ -162,6 +163,10 @@ Shared conventions:
 - Human: `✓ hub agent started (surface watcher)`; `--json` / `--ndjson`: `{type:"snapshot", data:{started:true, name, surface}}`.
 - Errors: agent already running → reply error envelope `busy`, exit 1, hint `hub kill <name>`; `omp` binary missing per OMP_BIN → 2.
 
+**`hub ping`** — side-effect-free liveness probe for scripts (docs/07 §Run probe). One cmd/reply round-trip, op `ping`, no state touched; safe to call in wait loops.
+- Human: `pong`; `--json` / `--ndjson`: `{type:"snapshot", data:{pong:true}}`.
+- Exit 0 with a live hub. No hub / refused connect → `unavailable-hub` → 2. No reply before the deadline → 3.
+
 **`hub web [--port P]`** — serve the Hub Console (`@yurifrl/hub-web`); routes and SSE are owned by `04-web.md`.
 - `--port P` defaults to `config.webPort` (4820); binds `127.0.0.1` only. Opens the browser on start; with non-TTY stdout it prints the URL and skips opening. Runs foreground; ctrl-c exits 0.
 - `--json` / `--ndjson` → usage, exit 1: a server has no snapshot semantics.
@@ -276,7 +281,7 @@ type ErrorCode =
 |---|---|---|
 | `0` | ok | success; clean quits (`q`); ctrl-c on followers; declined `kill` confirm |
 | `1` | usage | unknown command or flag, missing args, bad `[json]` parse, `--json` + `--ndjson`, unknown or ambiguous `<id>`/`<item>`, picker without TTY, `--tail 0`, `web --json`, reply error envelopes `not_found` / `ambiguous` / `busy` |
-| `2` | unavailable-hub | hub.sock missing or refused, handshake/version mismatch, `OMP_BIN` binary missing, web port busy |
+| `2` | unavailable-hub | hub.sock missing or refused, handshake/version mismatch, `OMP_BIN` binary missing, web port busy, `ping` with no hub (the probe exit) |
 | `3` | timeout | reply wait exceeded `replyTimeoutMs`; `tool` exceeded its `wait_seconds` budget |
 
 - **Decision:** unhandled exceptions exit 1 with the message on stderr (human) or a `"usage"` envelope (machine); 2 is reserved for "the hub is not reachable". **Why:** unavailable-hub is a distinct operational state — scripts retry on 2 and fix their invocation on 1; collapsing them hides which one happened. **Contract:** every error path in ## Subcommands maps to exactly one row above; the ErrorCode → exit mapping in the envelope type is exhaustive.

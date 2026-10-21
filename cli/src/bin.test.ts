@@ -282,4 +282,28 @@ describe("subprocess — hub binary exit codes (docs/03 §Exit codes table)", ()
     const { code } = await spawnHub(["answer", "att-1", "hi"]);
     expect(code).toBe(2);
   });
+
+  it("hub ping with missing socket → exit 2, unavailable envelope under --json", async () => {
+    const { code, stdout } = await spawnHub(["--json", "ping"]);
+    expect(code).toBe(2);
+    const env = JSON.parse(stdout);
+    expect(env.type).toBe("error");
+    expect(env.error.code).toBe("unavailable");
+  });
+
+  it("hub ping against a live fake hub → exit 0, pong snapshot under --json", async () => {
+    const sockPath = startHub({ onCmd: (frame) => (frame.op === "ping" ? { pong: true } : {}) });
+    const proc = Bun.spawn([process.execPath, HUB, "--json", "ping"], {
+      stdout: "pipe",
+      stderr: "pipe",
+      stdin: "ignore",
+      env: { ...process.env, NO_COLOR: "", OMP_HUB_SOCK: sockPath },
+    });
+    const stdout = await new Response(proc.stdout).text();
+    const code = await proc.exited;
+    expect(code).toBe(0);
+    const env = JSON.parse(stdout);
+    expect(env.type).toBe("snapshot");
+    expect(env.data).toEqual({ pong: true });
+  });
 });

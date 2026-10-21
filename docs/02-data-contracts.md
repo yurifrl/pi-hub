@@ -420,7 +420,7 @@ fire-and-forget — no reply, no cmdId; socket order is record order.
 | `v` | yes | protocol version |
 | `ch` | yes | `"cmd"` |
 | `cmdId` | yes | client-minted correlation id (e.g. `cli-43187-12`); replies echo it; replies may arrive out of order |
-| `op` | yes | one of the nine ops below |
+| `op` | yes | one of the ops below |
 | payload | per op | below |
 
 Reply frames: `{ v, ch:"reply", cmdId, ok:true, result }` or
@@ -442,6 +442,7 @@ deadline extends to 120s from first execution.
 | `answer` | `{ id, text }` | `{ item }` | delivers `text` to the item's session (send semantics), then resolves the item |
 | `assign` | `{ sessionId, task }` | `{ item }` | creates the pending assigned-work item (## Attention lifecycle) |
 | `agent` | `{}` | `{ started: true, name, adopted? }` | starts the hub's own agent through the watcher's supervised spawn path; adopts a live child instead of erroring when one already runs |
+| `ping` | `{}` | `{ pong: true }` | side-effect-free liveness probe: one full dispatch round-trip proves socket, parser, and core; `hub ping` (03-cli) and `bridge/run` build on it |
 
 The `attention` op:
 

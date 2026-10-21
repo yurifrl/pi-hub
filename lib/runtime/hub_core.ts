@@ -489,6 +489,10 @@ export const createHubCore = (deps: HubCoreDeps, config: HubCoreConfig = {}): Hu
             case "logTail":
             case "summaries":
                 return { ok: false, error: hubError("denied", `op ${req.op} not served by the plugin hub yet`, { retryable: false }) };
+            case "ping":
+                // liveness probe (docs/03 §Subcommands ping): a full dispatch
+                // round-trip proves socket, parser, and core are alive. No state.
+                return ok({ pong: true });
             default:
                 return { ok: false, error: hubError("denied", "unknown op", { retryable: false }) };
         }
@@ -496,7 +500,7 @@ export const createHubCore = (deps: HubCoreDeps, config: HubCoreConfig = {}): Hu
 
     const surface = {
         dispatch,
-        ops: (): OpName[] => ["list", "send", "tool", "spawn", "kill", "archive", "attention", "answer", "assign", "logTail", "summaries", "agent"],
+        ops: (): OpName[] => ["list", "send", "tool", "spawn", "kill", "archive", "attention", "answer", "assign", "logTail", "summaries", "agent", "ping"],
     };
 
     return {

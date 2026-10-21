@@ -1,7 +1,7 @@
 #!/bin/sh
 # Run Hermes attached to the host hub — one-shot interactive CLI, removed on exit.
 # This script is the manager (docs/07-hermes-bridge.md §Run): it ensures a hub
-# is live — reusing one (probe via `hub list`; a full cmd/reply round-trip is
+# is live — reusing one (probe via `hub ping`; a full cmd/reply round-trip is
 # liveness) or starting a standalone `hub serve` (no omp session needed) —
 # then launches the container. On exit it stops the hub only if this run
 # started it. Single-file socket mount is the transport that works under
@@ -19,19 +19,19 @@ fi
 # Shared socket path — hub side and container mount must agree.
 SOCK="${OMP_HUB_SOCK:-$HOME/.hub/hub.sock}"
 
-# Ensure a live hub: `hub list` exit 0 = already up; exit 2 = unavailable-hub
+# Ensure a live hub: `hub ping` exit 0 = already up; exit 2 = unavailable-hub
 # (docs/03 §Exit codes) = start one. Any other exit is a real failure.
 rc=0
-hub list >/dev/null 2>&1 || rc=$?
+hub ping >/dev/null 2>&1 || rc=$?
 SERVE_PID=0
 if [ "$rc" -eq 0 ]; then
   :
 elif [ "$rc" -eq 2 ]; then
   hub serve &
   SERVE_PID=$!
-  # wait for the socket to accept: handshake round-trip via `hub list`
+  # wait for the socket to accept: handshake round-trip via `hub ping`
   i=0
-  until hub list >/dev/null 2>&1; do
+  until hub ping >/dev/null 2>&1; do
     i=$((i + 1))
     if [ "$i" -ge 50 ]; then
       echo "hub serve did not come up within 10s" >&2

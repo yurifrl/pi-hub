@@ -171,6 +171,20 @@ describe("hub_core — send routing through the reporter bridge", () => {
     });
 });
 
+describe("hub_core — ping (docs/02 §ping, docs/03 §Subcommands ping)", () => {
+    it("ping replies {pong:true} with no state change — the liveness round-trip", async () => {
+        const { core, statusFile } = makeCore();
+        await seedSession(core, "s-peer");
+
+        const res = await core.surface.dispatch({ cmdId: "c-ping", op: "ping", args: {}, by: "cli" });
+        expect(res.ok).toBe(true);
+        if (res.ok) expect(res.value).toEqual({ pong: true });
+        // side-effect-free: the roster untouched
+        expect(statusFile.sessions["s-peer"]).toBeDefined();
+        expect(statusFile.attention).toHaveLength(0);
+    });
+});
+
 describe("hub_core — kill/archive close path (docs/02 §kill, §archive)", () => {
     it("kill closes a live session: archives, drops the row, appends the tombstone", async () => {
         const { core, statusFile, archiveRecords } = makeCore();

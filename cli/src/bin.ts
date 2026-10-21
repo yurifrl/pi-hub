@@ -32,6 +32,7 @@ import {
   serveBody,
   agentBody,
   tailsBody,
+  pingBody,
 } from "./commands";
 import { KillDeclined } from "./cmd_kill";
 import { CliError } from "./cli_errors";
@@ -130,6 +131,8 @@ sub("web", "serve the Hub Console")
   .action(invoke(webBody));
 
 sub("serve", "run a standalone hub on the socket (docs/07 §Run)").action(invoke(serveBody));
+
+sub("ping", "liveness probe: exit 0 hub live, 2 dead (docs/03 §Exit codes)").action(invoke(pingBody));
 
 // ---- boot ---------------------------------------------------------------
 
