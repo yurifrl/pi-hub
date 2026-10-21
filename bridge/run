@@ -10,14 +10,21 @@ set -eu
 cd "$(dirname "$0")"
 IMAGE=pi-hub-hermes
 
-# Build once; rebuild only when the Dockerfile or plugin change
-if [ ! -f .image-built ] || [ Dockerfile -nt .image-built ] || [ -n "$(find hermes-hub-plugin -newer .image-built -print -quit 2>/dev/null)" ]; then
+# Build once; rebuild only when the Dockerfile changes. The plugin is
+# bind-mounted from source below, so plugin edits never need a rebuild.
+if [ ! -f .image-built ] || [ Dockerfile -nt .image-built ]; then
   container build -t "$IMAGE" .
   touch .image-built
 fi
 
 # Shared socket path — hub side and container mount must agree.
 SOCK="${OMP_HUB_SOCK:-$HOME/.hub/hub.sock}"
+
+# Hermes state persists across runs (docs/07 §Run): config.yaml, auth.json,
+# .env, checkpoints — HERMES_HOME defaults to ~/.hermes, which --rm would
+# discard every run. Bind-mount a host dir; owned by uid 1000 (hermes).
+STATE="${HERMES_STATE_DIR:-$HOME/.hermes-bridge}"
+mkdir -p "$STATE"
 
 # Ensure a live hub: `hub ping` exit 0 = already up; exit 2 = unavailable-hub
 # (docs/03 §Exit codes) = start one. Any other exit is a real failure.
@@ -57,5 +64,7 @@ trap cleanup EXIT
 
 container run --rm -it \
   -v "$SOCK:/run/hub.sock" \
+  -v "$STATE:/home/hermes/.hermes" \
+  -v "$PWD/hermes-hub-plugin:/home/hermes/.hermes/plugins/hermes-hub" \
   -e OMP_HUB_SOCK=/run/hub.sock \
   "$IMAGE"

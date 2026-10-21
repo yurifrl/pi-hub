@@ -28,6 +28,12 @@ The standalone hub has no brain child and no widget (the socket, stores, and
 ops need no omp session — `extensions/serve.ts` composes `createHubLocal`
 with `serveBrain: false`).
 
+**State persists.** The container mounts a host directory at
+`~/.hermes` (`HERMES_STATE_DIR`, default `~/.hermes-bridge`) —
+config.yaml, auth.json, .env, checkpoints survive `--rm`. The hub plugin
+itself is bind-mounted from `bridge/hermes-hub-plugin/` at run time, so
+plugin edits never need a rebuild; only a Dockerfile change does.
+
 **2. The omp-embedded hub (`/hub-start`) remains the alternative.** A session
 with the plugin loaded hosts the same socket plus a brain child and the
 widget. `bridge/run` reuses either — the wire is identical.
