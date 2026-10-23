@@ -7,12 +7,20 @@ description: Run Hermes Agent in a container, working the hub board from inside 
 
 ## Run it (start here)
 
-**1. `bridge/run` is the manager — it starts the hub itself.** No omp session
+`bridge/run` is the manager — it starts the hub itself. No omp session
 is required to host the socket:
 
 ```sh
-bridge/run
+bridge/run                  # interactive: drop into the hermes TUI
+bridge/run "check the board" # batch: one agent turn, result printed
 ```
+
+Interactive mode attaches your terminal to the container TTY and hands
+you the hermes prompt (`❯`); the plugin injects hub status each turn.
+Batch mode runs one turn (`hermes -z`) with the given prompt, prints the
+result, and exits. Both reuse a live hub (probe via `hub ping`) or start
+a standalone one (`hub serve`); on exit the script stops only a hub it
+started itself.
 
 Before launching the container it probes the hub with `hub ping` (a full
 handshake + cmd/reply round-trip is liveness — docs/03 §Exit codes: exit 2 =
@@ -49,11 +57,14 @@ Everything the watcher agent can do, Hermes can now do — same `hub.sock` ops.
 Two injection points, registered by `bridge/hermes-hub-plugin/`:
 
 - **`hub` tool** — one-shot op per call: `list`, `attention`, `answer`,
-  `assign`, `send`, `tool`, `spawn`, `kill`, `archive`, `logTail`,
-  `summaries`, `agent`, `sessions`. Reply is the hub's JSON frame verbatim.
+  `assign`, `send`, `spawn`, `kill`, `archive`, `agent`, `sessions`, `ping`
+  (`tool`/`logTail`/`summaries` are CLI-only today — the plugin hub denies
+  them). Reply is the hub's JSON frame verbatim; the tool description names
+  each op's args, so "list my omp sessions" is a one-call ask.
 - **`pre_llm_call` hook** — every turn injects a `<hub-status>` digest:
-  open attention items + first three sessions, so Hermes knows the board
-  state without being asked.
+  open attention items + first three omp sessions (kind, phase, description,
+  cwd), pulled from a single `list` round-trip, so Hermes knows the board
+  state — and the word "omp" — without being asked.
 
 ## How the transport works
 
@@ -78,7 +89,7 @@ flowchart LR
 
 | file | owns |
 |---|---|
-| `bridge/run` | the manager: ensures a live hub (reuse or `hub serve`), builds the image, `container run --rm -it`, socket + plugin mounts, `HUB_SOCKET` env |
+| `bridge/run` | the manager: ensures a live hub (reuse or `hub serve`), builds the image, no args → interactive `container run --rm -it`, prompt → batch `hermes -z` with result via `~/.hermes-bridge/out/result.md`, socket + plugin mounts, `OMP_HUB_SOCK` env |
 | `extensions/serve.ts` + `cli/src/cmd_serve.ts` | the standalone hub: `hub serve` composition (`createHubLocal`, `serveBrain: false`), runs until SIGINT/SIGTERM, exit 0 |
 | `bridge/Dockerfile` | `python:3.13-slim` + pinned `hermes-agent==0.19.0` wheel (Renovate bumps it), non-root `hermes` user |
 | `bridge/hermes-hub-plugin/` | plugin: `__init__.py` (tool + hook + frame codec), `plugin.yaml` (discovery manifest) |
