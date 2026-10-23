@@ -82,23 +82,53 @@ flowchart LR
 - **Single-file mount, not a directory** — Apple containers reject dir mounts
   over this path with `ENOTSUP`; a single-file virtiofs mount is the transport
   that works. TCP would be loopback-only and defeats the point.
-- **Restart-proof** — the plugin reconnects every 2 s; a hub restart creates a
-  new socket inode and the next poll finds it. No persistent connection.
+- **Restart-proof** — every client (tool calls and the push subscriber alike)
+  reconnects until the hub is back; a hub restart creates a new socket inode
+  and reconnects find it. Tool calls stay one-shot; only the push subscriber
+  below holds a persistent connection.
+
+## Push (hub → Hermes)
+
+The reverse direction of the transport above, so the hub can reach Yuri on
+WhatsApp the moment an omp session stops and needs him — without waiting for
+a Hermes agent turn:
+
+- **Subscriber** — a long-lived plugin thread (`hermes-hub-push`) opens a
+  second socket connection, sends `hello` with `subscribe: true` (docs/02
+  §hub.sock), and reads `event` frames. Frames that fail to parse are
+  skipped, not fatal; disconnects retry with a 5 s backoff. The command
+  channel stays one-shot — this is the only persistent connection.
+- **What triggers a push** — committed attention items of the
+  human-needing kinds (`approval`, `question`, `blocked`) and `agent_end`
+  for sessions that had no open attention (plain finish). Delivery is
+  decided under one lock: same session+marker twice → dropped (a session
+  that resumes working re-arms a later stop; in-memory ledger, a plugin
+  restart at worst re-notifies once).
+- **Where it lands** — Hermes-side, not around Hermes. The plugin remembers
+  the last real WhatsApp conversation from `pre_gateway_dispatch` (platform
+  value `whatsapp`/`whatsapp_cloud` + chat id) and delivers through the live
+  gateway's own adapter (`runner.adapters` keyed by `Platform` enum, sent
+  via the container's sync→async bridge). No route captured, or the adapter
+  is gone → the push degrades to the `pi_hub_session_stopped` hook alone.
+- **Kind filtering** — only `attention` frames whose item kind is
+  human-needing and unresolved, plus `agent_end`. Resolutions (`resolvedAt`
+  set) are removal, not a stop.
 
 ## Files
 
 | file | owns |
 |---|---|
-| `bridge/run` | the manager: ensures a live hub (reuse or `hub serve`), builds the image, no args → interactive `container run --rm -it`, prompt → batch `hermes -z` with result via `~/.hermes-bridge/out/result.md`, socket + plugin mounts, `OMP_HUB_SOCK` env |
+| `bridge/run` | the manager: ensures a live hub (reuse or `hub serve`), builds the image, no args → interactive `container run --rm -it`, prompt → batch `hermes -z` with result via `~/.hermes-bridge/out/result.md`, socket + plugin mounts, `OMP_HUB_SOCK` env, `OPENROUTER_API_KEY` passthrough when set (optional — nous auth covers the default model) |
 | `extensions/serve.ts` + `cli/src/cmd_serve.ts` | the standalone hub: `hub serve` composition (`createHubLocal`, `serveBrain: false`), runs until SIGINT/SIGTERM, exit 0 |
 | `bridge/Dockerfile` | `python:3.13-slim` + pinned `hermes-agent==0.19.0` wheel (Renovate bumps it), non-root `hermes` user |
-| `bridge/hermes-hub-plugin/` | plugin: `__init__.py` (tool + hook + frame codec), `plugin.yaml` (discovery manifest) |
+| `bridge/hermes-hub-plugin/` | plugin: `__init__.py` (layered mirror of `lib/`: `domain` → `_transport` adapter → surface — pure vocabulary first, errors-as-values, no I/O in domain; pins `OPS` to `lib`'s `OP_NAMES` and `NOTIFY_KINDS` to hub `AttentionKind` via the parity test; plus the PUSH section's persistent subscriber → hook + WhatsApp delivery), `plugin.yaml` (discovery manifest) |
 
 ## Limits (v1)
 
-- **No push** — hub → Hermes delivery without an agent turn is out of scope;
-  the plugin API has no inbound socket. Hermes polls per turn. Revisit if
-  Hermes adds a listener API.
+- **Push is Hermes-side-only** — the hub broadcasts events to any subscriber
+  (docs/02 §hub.sock); routing and delivery live entirely in the plugin
+  section above. Standalone omp-side clients receive frames but never send
+  WhatsApp.
 - **`stream` is not a tool op** — the tool rejects it explicitly.
 - **Standalone serve is ops-complete, agent-ops fail clean** — `agent`
   (toggle the hub agent child) returns `unavailable-hub` when no omp runtime
