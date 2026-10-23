@@ -48,17 +48,26 @@ const runLive = async (ctx: CliContext): Promise<void> => {
     done.resolve();
   };
 
+  // pushed events can burst; one fetch in flight, one queued rerun
   let busy = false;
+  let dirty = false;
   const refresh = async (): Promise<void> => {
-    if (busy || finished) return;
+    if (finished) return;
+    if (busy) {
+      dirty = true;
+      return;
+    }
     busy = true;
     try {
-      const r = await client.cmd("list", {});
-      if (r.ok) {
-        data = boardDataOf(r.value);
-        state = { ...state, focus: Math.min(state.focus, Math.max(0, data.attention.length + data.idle.length - 1)) };
-        if (!finished && !renderer.isDestroyed) renderer.requestRender();
-      }
+      do {
+        dirty = false;
+        const r = await client.cmd("list", {});
+        if (r.ok) {
+          data = boardDataOf(r.value);
+          state = { ...state, focus: Math.min(state.focus, Math.max(0, data.attention.length + data.idle.length - 1)) };
+          if (!finished && !renderer.isDestroyed) renderer.requestRender();
+        }
+      } while (dirty && !finished);
     } finally {
       busy = false;
     }
@@ -102,12 +111,10 @@ const runLive = async (ctx: CliContext): Promise<void> => {
   renderer.on("destroy", finish);
   client.onEvent(() => void refresh());
   client.onClose(finish);
+  // relative times ("3m") age without events: the tick repaints only when the frame text changes
   timer = setInterval(() => {
-    void refresh().then(() => {
-      // tick re-renders only when the frame text would change
-      const next = linesText(boardLines(state, data, renderer.width, renderer.height, Date.now()));
-      if (next !== lastText && !renderer.isDestroyed) renderer.requestRender();
-    });
+    const next = linesText(boardLines(state, data, renderer.width, renderer.height, Date.now()));
+    if (next !== lastText && !renderer.isDestroyed) renderer.requestRender();
   }, REFRESH_MS);
   renderer.requestRender();
   await done.promise;

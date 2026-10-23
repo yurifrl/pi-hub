@@ -71,8 +71,18 @@ test("loader lists roster first, then log-only extras; chat reads the hub log", 
   writeFileSync(join(root, "logs", "zzzz-extra.jsonl"), '{"t":"x","kind":"prompt","text":"hi"}\n');
   const loader = createLoader(root, join(root, "sessions"));
   const list = { hub: {}, sessions: { "r-1": { cwd: "/w/alpha", title: "alpha", phase: "idle", model: "m", kind: "worker" } } };
-  const { rail } = loader.rail(list);
+  const { rail } = loader.rail(list, true);
   expect(rail.map((r) => r.kind)).toEqual(["roster", "log"]);
   expect(rail[0]?.name).toBe("alpha");
   expect(loader.chat(rail[1])[0]?.text).toBe("hi");
+});
+
+test("closed sessions stay out of the rail unless showClosed", () => {
+  const root = mkdtempSync(join(tmpdir(), "hub-watch-closed-"));
+  mkdirSync(join(root, "logs"), { recursive: true });
+  writeFileSync(join(root, "logs", "gone-1.jsonl"), '{"kind":"prompt","text":"hi"}\n');
+  const loader = createLoader(root, join(root, "sessions"));
+  const list = { hub: {}, sessions: { "r-1": { cwd: "/w/alpha", title: "alpha", phase: "idle", model: "m", kind: "worker" } } };
+  expect(loader.rail(list, false).rail.map((r) => r.kind)).toEqual(["roster"]);
+  expect(loader.rail(list, true).rail.map((r) => r.kind)).toEqual(["roster", "log"]);
 });

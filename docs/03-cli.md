@@ -75,7 +75,9 @@ An idle-phase session may also carry an `idle` AttentionItem raised by the hub a
 
 | key | action |
 |---|---|
-| ↑ / ↓ | move focus across interactive slots (attention items, then idle assign inputs) |
+| ↑ / ↓ / j / k | move focus across interactive slots (attention items, then idle assign inputs); `j`/`k` only when no input is open |
+| g / G | first / last slot (no input open) |
+| PgUp / PgDn / ctrl-u / ctrl-d | move focus a page |
 | any printable | start the inline input on the focused slot (answer for items, assign for idle rows) |
 | ⏎ | commit the input (cmd frame `send` or `assign`); the item resolves; focus advances |
 | esc | cancel the open input |
@@ -155,7 +157,7 @@ Shared conventions:
 - Errors: close → as `kill`; unreadable archive dir → 1 with the path in the message.
 
 **`hub watch`** — the full-screen chat console (alt-screen): **a resizable sessions rail on the left, the selected session's conversation on the right**, a compose row and a key/notice footer below (sketch 3). The rail lists **every session on the machine** — the hub roster first (`⚠` needs you, `▶` working, `?` waiting, `○` idle, `✖` blocked, `·` closing), then archived (`■`) and log-only (`□`) extras, newest first, capped at the 200 most recent log files. Names come from each session's omp transcript title, falling back to the cwd basename, then the id prefix. The chat shows user/assistant messages as `time who` headers with indented bodies; tool calls are one muted `▶ tool arg` line each — adjacent identical rows (tool retries) collapse to `×N`; empty system rows are dropped. An open attention item for the selected session is pinned above the compose row. Extras are read-only: hub log first, and sessions that never got one (the hub was down) fall back to their translated omp transcript.
-- Keys: `↑↓`/`Tab` select a session (extras included), `1-9` jump to the nth, `⏎` focus the compose row, `PgUp`/`PgDn` scroll the chat, `f` cycles the chat filter `all → user → assistant → tool`, `<`/`>` shrink/grow the rail between 14 and 60 cells, `d` dismiss the selected session's open attention item, `q`/`ctrl-c` quit (in compose: `esc` returns to the rail). Typing in compose edits a draft with `←/→/⌫`; `⏎` on a non-empty draft sends it — as the **answer** to the session's open attention item when there is one, otherwise as a plain message to the session.
+- Keys: `↑↓`/`j`/`k`/`Tab` select a session (extras included), `g`/`G` first/last, `1-9` jump to the nth, `⏎` focus the compose row, `PgUp`/`PgDn` (or `ctrl-u`/`ctrl-d`) scroll the chat, `c` shows/hides closed (archived and log-only) sessions — hidden by default, the choice persists in `<dataRoot>/cli-state.json` — `f` cycles the chat filter `all → user → assistant → tool`, `<`/`>` shrink/grow the rail between 14 and 60 cells, `d` dismiss the selected session's open attention item, `q`/`ctrl-c` quit (in compose: `esc` returns to the rail). Typing in compose edits a draft with `←/→/⌫`; `⏎` on a non-empty draft sends it — as the **answer** to the session's open attention item when there is one, otherwise as a plain message to the session.
 - Machine modes: static snapshot (selected session's last chat lines + attention items), no alt-screen.
 - Errors: hub unreachable while open is a rendered state, not a crash — the header shows `(hub offline)` muted, the chat keeps working from `logs/*.jsonl`; exit happens only on `q`.
 - **Decision:** `watch` degrades instead of failing on hub loss. **Why:** it is a viewer; killing the console because the hub restarted would destroy the operator's context. **Contract:** a send or answer attempted while offline produces an inline `err` notice in the footer, never a process exit.
@@ -179,11 +181,11 @@ Shared conventions:
 - `--json` / `--ndjson` → usage, exit 1: a server has no snapshot semantics.
 - Errors: hub already live on the socket (handshake refused / bind refused) → 2.
 
-**`hub tails`** — the transcript-tail bridge: feeds the hub sessions that cannot report themselves. Reads `~/.omp/agent/sessions/*/*.jsonl` incrementally and translates transcript lines into reporter frames over `hub.sock` (`client:"backfill"`), so pre-plugin omp sessions appear on the board like any other peer. Watch-me-not-mine: one file scanner + one incremental reader per transcript; no transcript mutation.
-- State persists in `~/.hub/tails-state.json` (offsets + session ids); restarts resume offsets and re-announce only non-ended sessions (attach-on-connect, same contract as the plugin reporter). Discovery at boot only picks up transcripts touched since process start — dead history is never announced.
+**The transcript bridge** — feeds the hub sessions that cannot report themselves. Reads `~/.omp/agent/sessions/*/*.jsonl` incrementally and translates transcript lines into reporter frames over `hub.sock` (`client:"backfill"`), so pre-plugin omp sessions appear on the board like any other peer. Watch-me-not-mine: one file scanner + one incremental reader per transcript; no transcript mutation.
+- Lives in `lib/adapters/transcript_bridge.ts` and runs **in-process with the hub** (`hub serve` and `/hub-start` launch it at bind time; stop() aborts it) — no separate command or child process. Co-ingestion with the plugin reporter is deduped in `hub_core.handleEvent` (a 5 s per-`session|type|text` echo window swallows the bridge's lagging copy of reported frames).
+- State persists in `~/.hub/tails-state.json` (offsets + session ids); restarts resume offsets and re-announce only non-ended sessions (attach-on-connect, same contract as the plugin reporter). Discovery at boot only picks up transcripts touched since hub start — dead history is never announced.
 - Turn semantics: `session_start` on discovery; `user_message` / `assistant_message` / `tool_call` per transcript line; `agent_end` when a transcript goes quiet `40s` after activity (re-arms on the next line). Ended sessions are not re-announced after a hub restart.
-- Human: `tails: watching <dir> → <sock> (quiet-end 40s)`; runs foreground, ctrl-c exits 0. Hub down at boot or mid-run is a retry loop (`hub unreachable — retrying every 2s`), never an exit.
-- `--json` / `--ndjson` → usage, exit 1: a bridge has no snapshot semantics.
+- Log line on stderr/stdout when the hub is down at boot or mid-run (`hub unreachable — retrying every 2s`); retry loop, never an exit.
 
 **`hub sessions`** — machine-wide omp inventory (docs/02 §Sessions op): the roster (`hub list` shape) merged with every omp transcript on the machine the plugin never reported. Cmd frame `sessions {}`.
 - Human: rows `id · title · cwd · model · status`; transcript-only peers show `detached`; ids whose transcripts went quiet 40 s print under a muted `detached (quiet)` tail instead of a row.
@@ -321,7 +323,7 @@ Hue bars `▎` are two cells wide, colored per session (plain here). The cursor 
  ■ 󰕮 ADMIN: Plan batte… │  …
  □ make a new release   │ ⚠ approve deploy canary 2/3?
  › ⏎ to write a message
- ↑↓ select · 1-9 jump · ⏎ write · f filter:all · < rail · > rail · PgUp/PgDn scroll · d dismiss · q quit
+ jk/↑↓ select · gG ends · 1-9 jump · ⏎ write · f filter:all · c closed:hidden · ^u/^d scroll · < > rail · d dismiss · q quit
 ```
 
 **4 — send picker** (`hub send`, no id given, query `dep` typed):

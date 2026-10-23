@@ -56,6 +56,8 @@ const CTRL: Record<string, NavKind> = {
   a: "home",
   e: "end",
   h: "backspace",
+  d: "pagedown",
+  u: "pageup",
 };
 
 const IGNORE: Key = { kind: "ignore" };

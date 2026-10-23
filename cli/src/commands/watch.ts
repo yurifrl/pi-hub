@@ -2,11 +2,12 @@
 // Machine modes print one static snapshot envelope; a piped human run prints one static frame;
 // a TTY run is the live OpenTUI loop. Hub loss is a rendered state ("hub offline"), never a crash.
 
-import { closeSync, fstatSync, openSync, readSync, readdirSync, statSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readFileSync, readSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { createCliRenderer } from "@opentui/core";
 import { cwdFromDir, declaredTitle, idFromName, parseLine, type TranscriptLine } from "@yurifrl/hub";
 import { resolveHubEnv } from "../../../extensions/hub_env";
+import type { HubClient } from "@yurifrl/hub/adapters/unix_socket";
 import type { CliContext, RegisterCommand } from "../context";
 import { openAttentionOf, rosterOf, type AttentionRow } from "../ids";
 import { emitSnapshot } from "../output";
@@ -31,7 +32,7 @@ import {
   type WatchState,
 } from "../tui/watch_view";
 import { readArchive, type ArchiveEntry } from "./archive";
-import { translate } from "./tails";
+import { translate } from "@yurifrl/hub/adapters/transcript_bridge";
 
 const REFRESH_MS = 2000;
 const LIST_DEADLINE_MS = 3000;
@@ -162,8 +163,8 @@ const scanTranscripts = (root: string): Map<string, TranscriptRef> => {
 type Extra = { id: string; kind: "archived" | "log"; t: number };
 
 export type Loader = {
-  /** rail rows + open attention items from the last `list` reply (null = hub never answered) */
-  rail(list: unknown): { rail: RailRow[]; attention: AttentionRow[] };
+  /** rail rows + open attention items from the last `list` reply (null = hub never answered); closed rows only when `showClosed` */
+  rail(list: unknown, showClosed: boolean): { rail: RailRow[]; attention: AttentionRow[] };
   /** the selected session's conversation, newest last */
   chat(row: RailRow | undefined): ChatRow[];
 };
@@ -221,7 +222,7 @@ export const createLoader = (dataRoot: string, sessionsRoot: string, now: () => 
   };
 
   return {
-    rail(list) {
+    rail(list, showClosed) {
       const roster = list === null ? [] : rosterOf(list);
       const attention = list === null ? [] : openAttentionOf(list);
       const open = new Map<string, number>();
@@ -240,9 +241,11 @@ export const createLoader = (dataRoot: string, sessionsRoot: string, now: () => 
         };
       });
       rows.sort((a, b) => b.open - a.open || a.name.localeCompare(b.name));
-      for (const e of extras(new Set(roster.map((s) => s.id)))) {
-        const g = extraGlyph(e.kind);
-        rows.push({ id: e.id, name: extraName(e.id), kind: e.kind, phase: "", glyph: g.glyph, tone: g.tone, open: 0 });
+      if (showClosed) {
+        for (const e of extras(new Set(roster.map((s) => s.id)))) {
+          const g = extraGlyph(e.kind);
+          rows.push({ id: e.id, name: extraName(e.id), kind: e.kind, phase: "", glyph: g.glyph, tone: g.tone, open: 0 });
+        }
       }
       return { rail: rows, attention };
     },
@@ -255,6 +258,28 @@ export const createLoader = (dataRoot: string, sessionsRoot: string, now: () => 
       return transcriptRowsOf(row.id, readSlice(ref.path, "tail", CHAT_BYTES)).slice(-CHAT_ROWS);
     },
   };
+};
+
+// ---- persisted UI state ------------------------------------------------------------
+
+const stateFile = (dataRoot: string): string => join(dataRoot, "cli-state.json");
+
+/** Whether the rail lists closed sessions; hidden unless the user toggled it on in an earlier run. */
+const loadShowClosed = (dataRoot: string): boolean => {
+  try {
+    const saved: unknown = JSON.parse(readFileSync(stateFile(dataRoot), "utf8"));
+    return typeof saved === "object" && saved !== null && "showClosed" in saved && saved.showClosed === true;
+  } catch {
+    return false;
+  }
+};
+
+const saveShowClosed = (dataRoot: string, show: boolean): void => {
+  try {
+    writeFileSync(stateFile(dataRoot), `${JSON.stringify({ showClosed: show })}\n`);
+  } catch {
+    // read-only data root: the toggle still holds for this run
+  }
 };
 
 // ---- snapshot ----------------------------------------------------------------------
@@ -311,15 +336,24 @@ const runLive = async (ctx: CliContext, src: Source, first: WatchState): Promise
     if (!finished && !renderer.isDestroyed) renderer.requestRender();
   };
 
+  // pushed events burst; one reload in flight, one queued rerun
   let busy = false;
+  let dirty = false;
   const reload = async (): Promise<void> => {
-    if (busy || finished) return;
+    if (finished) return;
+    if (busy) {
+      dirty = true;
+      return;
+    }
     busy = true;
     try {
-      await fetchList(ctx, src);
-      state = refreshed(state, { ...src.loader.rail(src.list), offline: src.offline });
-      state = { ...state, chat: src.loader.chat(selectedRow(state)) };
-      draw();
+      do {
+        dirty = false;
+        await fetchList(ctx, src);
+        state = refreshed(state, { ...src.loader.rail(src.list, state.showClosed), offline: src.offline });
+        state = { ...state, chat: src.loader.chat(selectedRow(state)) };
+        draw();
+      } while (dirty && !finished);
     } finally {
       busy = false;
     }
@@ -336,6 +370,10 @@ const runLive = async (ctx: CliContext, src: Source, first: WatchState): Promise
       case "load":
         state = { ...state, chat: src.loader.chat(selectedRow(state)) };
         draw();
+        return;
+      case "closed":
+        saveShowClosed(ctx.config.dataRoot, effect.show);
+        await reload();
         return;
       case "send":
         try {
@@ -376,9 +414,37 @@ const runLive = async (ctx: CliContext, src: Source, first: WatchState): Promise
     });
   });
   renderer.on("destroy", finish);
-  timer = setInterval(() => void reload(), REFRESH_MS);
+
+  // Pushed event frames drive reloads. The hub may be down or restart (watch tolerates
+  // it: last roster stays, header says offline), so only while there is no live
+  // subscription does the timer retry the connection.
+  let sub: HubClient | undefined;
+  const attach = async (): Promise<void> => {
+    if (sub !== undefined || finished) return;
+    try {
+      const client = await ctx.connect({ subscribe: true });
+      if (finished) {
+        client.close();
+        return;
+      }
+      sub = client;
+      client.onEvent(() => void reload());
+      client.onClose(() => {
+        sub = undefined;
+        src.offline = true;
+        void reload();
+      });
+      await reload();
+    } catch {
+      // hub unreachable: keep the file-backed view fresh; the timer retries the connection
+      void reload();
+    }
+  };
+  timer = setInterval(() => void attach(), REFRESH_MS);
+  void attach();
   draw();
   await done.promise;
+  sub?.close();
 };
 
 export const register: RegisterCommand = (program, ctx) => {
@@ -395,8 +461,9 @@ export const register: RegisterCommand = (program, ctx) => {
       };
       await fetchList(ctx, src);
       const live = isInteractive(policy.machine);
-      const { rail, attention } = src.loader.rail(src.list);
-      let state = initialState(rail, attention, { offline: src.offline, keysOff: !live });
+      const showClosed = loadShowClosed(config.dataRoot);
+      const { rail, attention } = src.loader.rail(src.list, showClosed);
+      let state = initialState(rail, attention, { offline: src.offline, keysOff: !live, showClosed });
       state = { ...state, chat: src.loader.chat(selectedRow(state)) };
       if (policy.machine) {
         emitSnapshot(policy, watchSnapshot(state));

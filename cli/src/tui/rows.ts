@@ -99,6 +99,8 @@ export const formatAge = (ms: number): string => {
 
 const slotCount = (data: BoardData): number => data.attention.length + data.idle.length;
 const clampFocus = (focus: number, data: BoardData): number => Math.max(0, Math.min(focus, slotCount(data) - 1));
+/** rows moved by pageup/pagedown/ctrl-u/ctrl-d (same step as the picker) */
+const BOARD_PAGE = 8;
 
 /** True when nothing needs the user and no session is idle (spec calm variant). */
 export const isCalm = (data: BoardData): boolean => data.attention.length === 0 && data.idle.length === 0;
@@ -126,6 +128,8 @@ export const boardKey = (state: BoardState, key: Key, data: BoardData): { state:
   if (key.kind === "down") return at({ focus: clampFocus(focus + 1, data) });
   if (key.kind === "home") return at({ focus: 0 });
   if (key.kind === "end") return at({ focus: clampFocus(slotCount(data) - 1, data) });
+  if (key.kind === "pageup") return at({ focus: clampFocus(focus - BOARD_PAGE, data) });
+  if (key.kind === "pagedown") return at({ focus: clampFocus(focus + BOARD_PAGE, data) });
 
   if (key.kind === "enter") {
     const text = state.input.text.trim();
@@ -140,6 +144,14 @@ export const boardKey = (state: BoardState, key: Key, data: BoardData): { state:
     switch (key.ch) {
       case "q":
         return at({}, { kind: "quit" });
+      case "j":
+        return at({ focus: clampFocus(focus + 1, data) });
+      case "k":
+        return at({ focus: clampFocus(focus - 1, data) });
+      case "g":
+        return at({ focus: 0 });
+      case "G":
+        return at({ focus: clampFocus(slotCount(data) - 1, data) });
       case "l":
         return at({}, { kind: "log" });
       case "o":

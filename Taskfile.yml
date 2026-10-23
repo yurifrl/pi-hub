@@ -5,3 +5,6 @@ tasks:
     desc: Serve the docs/ tree at http://127.0.0.1:4321 (dev mode — markdown hot-reloads; astro lives in the root node_modules)
     cmds:
       - cd docs && bunx --bun astro dev
+  cli:
+    cmds:
+      -  bun cli/src/bin.ts watch

@@ -55,6 +55,8 @@ export type WatchState = {
   sel: number;
   focus: "rail" | "compose";
   filter: Filter;
+  /** closed (archived / log-only) sessions are listed in the rail; persisted across runs */
+  showClosed: boolean;
   railW: number;
   /** chat lines scrolled up from the bottom */
   scroll: number;
@@ -70,7 +72,8 @@ export type Effect =
   | { kind: "quit" }
   | { kind: "load" }
   | { kind: "send"; id: string; text: string; answerId?: string }
-  | { kind: "dismiss"; id: string; sessionId: string };
+  | { kind: "dismiss"; id: string; sessionId: string }
+  | { kind: "closed"; show: boolean };
 
 export type Step = { state: WatchState; effect?: Effect };
 export type Geom = { w: number; h: number };
@@ -98,10 +101,16 @@ export const rosterGlyph = (phase: string, open: number): PhaseGlyph => {
 
 export const extraGlyph = (kind: "archived" | "log"): PhaseGlyph => ({ glyph: kind === "archived" ? "■" : "□", tone: "muted" });
 
+/** Per-row session state: roster rows are `working` or `done` (nothing running); anything else shows its phase. */
+export const stateLabel = (r: RailRow): string => {
+  if (r.kind !== "roster") return "closed";
+  return r.phase === "idle" || r.phase === "" ? "done" : r.phase;
+};
+
 export const initialState = (
   rail: RailRow[],
   attention: AttentionRow[],
-  opts: { offline?: boolean; keysOff?: boolean } = {},
+  opts: { offline?: boolean; keysOff?: boolean; showClosed?: boolean } = {},
 ): WatchState => {
   const first = rail.findIndex((r) => r.open > 0);
   return {
@@ -110,6 +119,7 @@ export const initialState = (
     sel: first >= 0 ? first : 0,
     focus: "rail",
     filter: "all",
+    showClosed: opts.showClosed === true,
     railW: RAIL_DEFAULT,
     scroll: 0,
     draft: emptyInput,
@@ -328,7 +338,12 @@ export const stepWatch = (state: WatchState, key: Key, geom: Geom): Step => {
     case "char": {
       const ch = key.ch;
       if (ch >= "1" && ch <= "9") return moveTo(s, Number(ch) - 1);
+      if (ch === "j") return moveTo(s, s.sel + 1);
+      if (ch === "k") return moveTo(s, s.sel - 1);
+      if (ch === "g") return moveTo(s, 0);
+      if (ch === "G") return moveTo(s, s.rail.length - 1);
       if (ch === "q") return { state: s, effect: { kind: "quit" } };
+      if (ch === "c") return { state: { ...s, showClosed: !s.showClosed }, effect: { kind: "closed", show: !s.showClosed } };
       if (ch === "f") {
         const next = FILTERS[(FILTERS.indexOf(s.filter) + 1) % FILTERS.length] as Filter;
         return { state: { ...s, filter: next, scroll: 0 } };
@@ -359,7 +374,7 @@ const headerLine = (s: WatchState, w: number): Line => {
   const n = s.rail.filter((r) => r.open > 0).length;
   const left: Line = [
     sp(" hub watch", "accent", { bold: true }),
-    sp(` · ${s.rail.length} sessions · `, "muted"),
+    sp(` · ${s.rail.length} sessions${s.showClosed ? "" : " open"} · `, "muted"),
     n > 0 ? sp(`${n} need you`, "warn", { bold: true }) : sp("all calm", "muted"),
   ];
   const right: Line = s.offline ? [sp("(hub offline) ", "muted")] : [];
@@ -386,7 +401,7 @@ const railLines = (s: WatchState, f: Frame): Line[] => {
       sp(" "),
       sp(r.name, focused || r.kind === "roster" ? "fg" : "muted", { bold: focused }),
     ];
-    const right: Line = r.open > 1 ? [sp(`+${r.open} `, "warn")] : [];
+    const right: Line = [...(r.open > 1 ? [sp(`+${r.open} `, "warn")] : []), sp(`${stateLabel(r)} `, r.tone)];
     out.push(withBg(splitLine(left, right, f.railW), bg));
   }
   while (out.length < f.bodyH) out.push(withBg(padLine([], f.railW), "panel"));
@@ -444,7 +459,7 @@ const footerLine = (s: WatchState, w: number): Line => {
   if (s.notice !== null) return padLine([sp(` ${s.notice.text}`, s.notice.tone)], w);
   if (s.focus === "compose") return padLine([sp(" ⏎ send · esc back · ←/→ move · ⌫ delete · ^c quit", "muted")], w);
   return padLine(
-    [sp(` ↑↓ select · 1-9 jump · ⏎ write · f filter:${s.filter} · < rail · > rail · PgUp/PgDn scroll · d dismiss · q quit`, "muted")],
+    [sp(` jk/↑↓ select · gG ends · 1-9 jump · ⏎ write · f filter:${s.filter} · c closed:${s.showClosed ? "shown" : "hidden"} · ^u/^d scroll · < > rail · d dismiss · q quit`, "muted")],
     w,
   );
 };
