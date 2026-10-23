@@ -8,3 +8,6 @@ tasks:
   cli:
     cmds:
       -  bun cli/src/bin.ts watch
+  hermes:
+    cmds:
+      - ./bridge/run
