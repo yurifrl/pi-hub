@@ -1,10 +1,11 @@
 #!/bin/sh
-# Run Hermes attached to the host hub — one-shot interactive CLI, removed on exit.
-# This script is the manager (docs/07-hermes-bridge.md §Run): it ensures a hub
-# is live — reusing one (probe via `hub ping`; a full cmd/reply round-trip is
-# liveness) or starting a standalone `hub serve` (no omp session needed) —
-# then launches the container. On exit it stops the hub only if this run
-# started it. Single-file socket mount is the transport that works under
+# Run Hermes attached to the host hub — one-shot batch agent turn, container
+# removed on exit. This script is the manager (docs/07-hermes-bridge.md §Run):
+# it ensures a hub is live — reusing one (probe via `hub ping`; a full
+# cmd/reply round-trip is liveness) or starting a standalone `hub serve` (no
+# omp session needed) — then launches the container with your prompt as the
+# turn: `bridge/run "check the board"`. On exit it stops the hub only if this
+# run started it. Single-file socket mount is the transport that works under
 # Apple containers.
 set -eu
 cd "$(dirname "$0")"
@@ -62,10 +63,42 @@ cleanup() {
 }
 trap cleanup EXIT
 
-docker run --rm -it \
+# OPENROUTER_API_KEY passes through to the container when the shell has it
+# (hermes uses it for openrouter models). Not set is not fatal — auth.json
+# (nous/ornith) still boots the TUI.
+KEY_ARGS=""
+[ -n "${OPENROUTER_API_KEY:-}" ] && KEY_ARGS="-e OPENROUTER_API_KEY=$OPENROUTER_API_KEY"
+[ -n "$KEY_ARGS" ] || echo "note: OPENROUTER_API_KEY not set — openrouter models unavailable (nous auth still works)" >&2
+
+# Apple container runtime on a healthy daemon: `run -it` streams live
+# (verified 1.6.0: p-then-12s-then-p markers arrive in real time). The old
+# buffering freeze was the daemon in a degraded state — restart the daemon,
+# don't work around it here. With a prompt, hermes runs in one-shot batch
+# mode (-z); with none, you drop into the interactive TUI via -it.
+if [ "$#" -eq 0 ]; then
+  exec container run --rm -it \
+    $KEY_ARGS \
+    -v "$SOCK:/run/hub.sock" \
+    -v "$STATE:/home/hermes/.hermes" \
+    -v "$PWD/hermes-hub-plugin:/home/hermes/.hermes/plugins/hermes-hub" \
+    -e OMP_HUB_SOCK=/run/hub.sock \
+    -e TERM \
+    "$IMAGE"
+fi
+
+OUT="${HERMES_OUT_DIR:-$HOME/.hermes-bridge/out}"
+mkdir -p "$OUT"
+RES="$OUT/result.md"
+: > "$RES"
+
+container run --rm \
+  $KEY_ARGS \
   -v "$SOCK:/run/hub.sock" \
   -v "$STATE:/home/hermes/.hermes" \
   -v "$PWD/hermes-hub-plugin:/home/hermes/.hermes/plugins/hermes-hub" \
-  -e OPENROUTER_API_KEY=$OPENROUTER_API_KEY \
+  -v "$OUT:/out" \
   -e OMP_HUB_SOCK=/run/hub.sock \
-  "$IMAGE"
+  --entrypoint /bin/sh \
+  "$IMAGE" -c 'hermes -z "$1" > /out/result.md 2>&1; echo "hermes-rc=$?" >&2' sh "$@"
+
+cat "$RES"
