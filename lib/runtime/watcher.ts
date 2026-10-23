@@ -178,11 +178,12 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
 
   // ---- status.json submit (step 3): the hub writer owns the file ----
   const submitPhase = async (sessionId: string, phase: Phase, description: string): Promise<void> => {
+    let changed = false;
     const res = await cfg.status.update((s) => {
       const rec = s.sessions[sessionId];
       if (!rec) return s; // roster rows are the reporter's job
-      const changed = rec.phase !== phase || rec.description !== description;
-      if (!changed) return s;
+      if (rec.phase === phase && rec.description === description) return s;
+      changed = true;
       const history = [...(rec.phaseHistory ?? []), { phase, at: iso(cfg.clock) }].slice(-50);
       return {
         ...s,
@@ -192,7 +193,12 @@ export const startWatcher = (opts: WatcherOptions): WatcherRuntime => {
         },
       };
     });
-    if (res.ok) phases.set(sessionId, phase);
+    if (!res.ok || !changed) return;
+    // the write actually changed the record — announce it on the bus so
+    // subscribed clients see phase transitions without polling (docs/02
+    // §Event frames: `{ sessionId, phase, at }`)
+    cfg.bus.publish({ topic: "phase", payload: { sessionId, phase, at: iso(cfg.clock) } });
+    phases.set(sessionId, phase);
   };
 
   // ---- summaries (step 4): ≤2 sentences per session turn ----

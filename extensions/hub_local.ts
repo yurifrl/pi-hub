@@ -13,6 +13,7 @@ import { createJsonStore } from "@yurifrl/hub/adapters/json_store";
 import { createJsonlStore } from "@yurifrl/hub/adapters/jsonl_store";
 import { createMemoryBus } from "@yurifrl/hub/adapters/memory_bus";
 import { createStatusAttentionStore } from "@yurifrl/hub/adapters/attention_store";
+import { hubEventToFrame } from "@yurifrl/hub/adapters/event_frames";
 import { createFsArchiveStore } from "@yurifrl/hub/adapters/fs_archive_store";
 import { createTimeoutScheduler } from "@yurifrl/hub/adapters/timeout_scheduler";
 import { createOmpAgentRuntime } from "@yurifrl/hub/adapters/omp_agent";
@@ -21,6 +22,7 @@ import type { HubSocketServer, ReportFrame } from "@yurifrl/hub/adapters/unix_so
 import { createOmpTranscriptStore } from "@yurifrl/hub/adapters/omp_transcripts";
 import { startWatcher } from "@yurifrl/hub/runtime/watcher";
 import type { WatcherRuntime } from "@yurifrl/hub/runtime/watcher";
+import { runTranscriptBridge } from "@yurifrl/hub/adapters/transcript_bridge";
 import { createHubCore } from "@yurifrl/hub/runtime/hub_core";
 import type { HubCore } from "@yurifrl/hub/runtime/hub_core";
 import type { HubError, Result } from "@yurifrl/hub";
@@ -133,7 +135,7 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
     const status = createJsonStore(env.dataRoot);
     const summaries = createJsonlStore(env.dataRoot);
     const bus = createMemoryBus();
-    const attention = createStatusAttentionStore({ status, summaries, clock, selfIds: () => [deps.selfSessionId()] });
+    const attention = createStatusAttentionStore({ status, summaries, clock, selfIds: () => [deps.selfSessionId()], bus });
     const archive = createFsArchiveStore(env.dataRoot);
     const scheduler = createTimeoutScheduler();
     const runtimeOpts = {
@@ -180,8 +182,12 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
 
     let socket: Pick<HubSocketServer, "start" | "close" | "broadcast" | "deliverTo"> | null = null;
     let watcher: WatcherRuntime | null = null;
+    /** the in-process transcript bridge (docs/03 §tails): every fresh omp
+     * transcript is announced+pumped so un-reportable sessions appear */
+    let bridge: AbortController | null = null;
     /** cancel handle for the hub-restart reaper timer (docs/02 §hub-restart) */
     let cancelReaper: (() => void) | null = null;
+    let busBridgeUnsub: (() => void) | null = null;
 
     /** In-process widget tap: the hub session's controller subscribes to the
      * same EventBus the watcher and socket fan-out use (docs/01 stage 4:
@@ -242,6 +248,26 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
                 socket = null;
                 return started;
             }
+            // every committed change reaches subscribed clients as an event frame
+            // (docs/02 §Event frames) — board/watch/web refresh on push, no polling
+            busBridgeUnsub = bus.subscribe((evt) => {
+                const out = hubEventToFrame(evt);
+                if (out) socket?.broadcast(out);
+            });
+
+            // transcript bridge (docs/03 §tails) runs in-process: sessions the
+            // reporter cannot reach (no extension, foreign cwd) still appear and
+            // stream — co-ingestion echoes are dropped by core's dedup guard
+            bridge = new AbortController();
+            void runTranscriptBridge({
+                sock: env.sock,
+                sessionsRoot: env.sessionsRoot,
+                stateFile: join(env.dataRoot, "tails-state.json"),
+                signal: bridge.signal,
+                log: (line) => console.error(`[hub] transcript bridge: ${line}`),
+            }).catch((e) => {
+                if (!bridge?.signal.aborted) console.error(`[hub] transcript bridge crashed: ${(e as Error).message}`);
+            });
 
             // watcher over the bus (tk-jwx runtime; supervision spawns the acp
             // agent through agentRuntime). start() subscribes, runs catch-up,
@@ -302,6 +328,8 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
         },
 
         async stop() {
+            bridge?.abort();
+            bridge = null;
             cancelReaper?.();
             cancelReaper = null;
             const adoptedAgentSession = watcher?.state().agentSessionId ?? null;
@@ -317,6 +345,8 @@ export const createHubLocal = (deps: HubLocalDeps): HubLocal => {
                     return rest as StatusFile;
                 });
             }
+            busBridgeUnsub?.();
+            busBridgeUnsub = null;
             if (socket) {
                 await socket.close(); // reporters see EOF, enter reconnect backoff
                 socket = null;

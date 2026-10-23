@@ -298,7 +298,7 @@ Reporter side: on its own `session_shutdown` the reporter makes one best-effort 
 | `OMP_HUB_BRAIN` | unset | extension factory | `1` → early-return guard: this process is a driven child (brain/worker) and contributes RPC answers only |
 | `OMP_HUB_MODEL` | unset | `/hub-start`, `/hub-agent`, `hub_spawn_worker` | default model spec for spawned children |
 | `OMP_BIN` | `omp` | `AgentRuntime` callers | binary spawned for brain, workers, and the hub agent |
-| `OMP_HUB_SESSIONS_ROOT` | `~/.omp/agent/sessions` | hub (`sessions` op) | machine-wide omp transcript root scanned for the sessions op (docs/02 §Sessions op); same tree `hub tails` reads |
+| `OMP_HUB_SESSIONS_ROOT` | `~/.omp/agent/sessions` | hub (`sessions` op) | machine-wide omp transcript root scanned for the sessions op (docs/02 §Sessions op); same tree the transcript bridge reads |
 | `OMP_HUB_AGENT` | unset | extension factory | `1` → this session IS the hub agent: its frames are marked `kind:"agent"` and excluded from attention/summarize loops |
 
 ## Anti-recursion

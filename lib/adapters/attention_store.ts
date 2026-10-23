@@ -21,6 +21,7 @@ import type { Filter } from "../domain/filter";
 import type { AttentionStore } from "../ports/attention_store";
 import type { StatusStore } from "../ports/status_store";
 import type { SummaryStore } from "../ports/summary_store";
+import type { EventBus } from "../ports/event_bus";
 import type { Clock } from "../ports/clock";
 
 export type StatusAttentionStoreOptions = {
@@ -29,6 +30,10 @@ export type StatusAttentionStoreOptions = {
     clock: Clock;
     /** guard 6: session ids that may never raise attention (the hub agent itself) */
     selfIds?: () => string[];
+    /** when present, every committed raise/resolve publishes a bus
+     * `attention` event (docs/02 §Event frames) — the store stays bus-free
+     * otherwise, so standalone compositions keep their current shape. */
+    bus?: EventBus;
 };
 
 const denied = (message: string): HubError => hubError("denied", message, { retryable: false });
@@ -68,7 +73,13 @@ export const createStatusAttentionStore = (opts: StatusAttentionStoreOptions): A
         if (!res.ok) return res;
         cache = res.value.attention;
         const item = res.value.attention.find((i) => i.sessionId === c.sessionId && i.kind === c.kind && i.resolvedAt === undefined);
-        return item ? { ok: true, value: item } : { ok: false, error: denied("raise did not land") };
+        if (item) {
+            // committed raise (fresh or idempotent text update) fans out on the
+            // bus (docs/01 stage 4): payload is the touched item after the change
+            opts.bus?.publish({ topic: "attention", payload: item });
+            return { ok: true, value: item };
+        }
+        return { ok: false, error: denied("raise did not land") };
     },
 
     async resolve(id: string, answer: string | undefined, by: Caller): Promise<Result<AttentionItem, HubError>> {
@@ -93,6 +104,10 @@ export const createStatusAttentionStore = (opts: StatusAttentionStoreOptions): A
         const line = resolutionLine({ t: iso(opts.clock), sessionId: resolved.sessionId, id: resolved.id, kind: resolved.kind, answer, by });
         const appended = await opts.summaries.append(line);
         if (!appended.ok) return appended;
+        // committed resolution fans out on the bus: payload is the touched
+        // item after the change (resolvedAt stamped; widget treats an item
+        // with resolvedAt as a removal)
+        opts.bus?.publish({ topic: "attention", payload: resolved });
         return { ok: true, value: resolved };
     },
 });

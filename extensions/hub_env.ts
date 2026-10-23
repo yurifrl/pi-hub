@@ -20,8 +20,8 @@ export type HubEnv = {
     /** data root (~/.hub); derived from the socket path's directory — status.json,
      * logs, summaries, archive all live beside the socket (docs/02 §Data root). */
     dataRoot: string;
-    /** machine-wide omp transcript root for the sessions op (docs/02 §sessions);
-     * default ~/.omp/agent/sessions, matching cmd_tails' SESSIONS_DIR. */
+    /** machine-wide omp transcript root for the sessions op and the transcript
+     * bridge (docs/02 §sessions); default ~/.omp/agent/sessions. */
     sessionsRoot: string;
 };
 

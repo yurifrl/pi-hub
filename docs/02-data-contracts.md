@@ -493,13 +493,13 @@ plugin and cannot report themselves. The plugin roster stays authoritative
 for sessions that report: a roster row wins by id verbatim.
 
 - **Scan** — `lib/adapters/omp_transcripts` walks
-  `~/.omp/agent/sessions/<dir>/<name>.jsonl` (the same tree `hub tails`
-  reads), reads each transcript's head (session id, title, model) and tail
+  `~/.omp/agent/sessions/<dir>/<name>.jsonl` (the same tree the transcript
+  bridge reads), reads each transcript's head (session id, title, model) and tail
   (quiet-end), and yields one fact per transcript. Env override:
   `OMP_HUB_SESSIONS_ROOT`. Per-file problems land in the reply's
   `errors[]` — the op never fails because of one unreadable file.
 - **Stale rule** — a transcript untouched for 40 s (the same quiet window
-  `hub tails` uses) is exited: its id is listed under `detached` and gets
+  the transcript bridge uses) is exited: its id is listed under `detached` and gets
   no row. Fresh transcript-only sessions get rows with `status:"detached"`,
   `kind:"peer"`, `phase:"working"`, cwd decoded from the dir name.
 - **Errors** — a failed whole-tree scan surfaces `unavailable-hub`;

@@ -314,7 +314,23 @@ export const createHubCore = (deps: HubCoreDeps, config: HubCoreConfig = {}): Hu
         return ok(reaped);
     };
 
+    const recent = new Map<string, number>();
+    /** Co-ingestion dedup (docs/03 §tails): a session with a live reporter is
+     * ALSO pumped by the transcript bridge ≤1 poll (500ms) later; the second
+     * identical content frame is an echo, not news. session_start/agent_end
+     * are upserts, not content — never suppressed. */
+    const isEcho = (raw: RawOmpEvent): boolean => {
+        if (raw.type === "session_start" || raw.type === "agent_end") return false;
+        const now = deps.clock.now();
+        for (const [k, at] of recent) if (now - at > 5000) recent.delete(k);
+        const key = `${raw.sessionId}|${raw.type}|${renderText(raw)}`;
+        if (recent.has(key)) return true;
+        recent.set(key, now);
+        return false;
+    };
+
     const handleEvent = async (raw: RawOmpEvent): Promise<Result<void, HubError>> => {
+        if (isEcho(raw)) return ok(undefined);
         const text = renderText(raw);
         // 1. durable log line (docs/02 §logs)
         const logWrite = await deps.log.appendLog({

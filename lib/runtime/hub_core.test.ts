@@ -20,7 +20,7 @@ import type { LogStore, StoredLogEntry } from "../adapters/jsonl_store";
 
 const ok = <T>(value: T): Result<T, HubError> => ({ ok: true, value });
 
-const makeCore = (opts: { selfSessionId?: string; deliverTo?: (sessionId: string, text: string) => Result<void, HubError>; restartGraceMs?: number; ompSessions?: OmpTranscriptStore } = {}) => {
+const makeCore = (opts: { selfSessionId?: string; deliverTo?: (sessionId: string, text: string) => Result<void, HubError>; restartGraceMs?: number; ompSessions?: OmpTranscriptStore; now?: () => number } = {}) => {
     const statusFile: StatusFile = {
         version: 1,
         startedAt: "2026-01-01T00:00:00.000Z",
@@ -86,7 +86,7 @@ const makeCore = (opts: { selfSessionId?: string; deliverTo?: (sessionId: string
             return ok(done);
         },
     };
-    const clock: Clock = { now: () => 1_000_000 };
+    const clock: Clock = { now: opts.now ?? (() => 1_000_000) };
     /** ArchiveStore fake: every write is recorded for assertions; paths mirror
      * the fs layout so tombstone checks read like the real thing. */
     const written: ArchiveRecord[] = [];
@@ -255,6 +255,37 @@ describe("hub_core — kill/archive close path (docs/02 §kill, §archive)", () 
         expect(archiveRecords[0]!.resolutions).toEqual([
             expect.objectContaining({ id: "att-1", resolvedAt: "1970-01-01T00:16:41.000Z" }),
         ]);
+    });
+});
+
+describe("hub_core — co-ingestion dedup (docs/03 §tails: reporter + bridge double-feed)", () => {
+    it("an identical message frame within 5 s is swallowed — one log line, not two", async () => {
+        const { core, logs } = makeCore();
+        await seedSession(core, "peer-1");
+        const frame = { type: "user_message", sessionId: "peer-1", text: "same text" } as RawOmpEvent;
+        await core.handleEvent(frame); // reporter's copy
+        await core.handleEvent(structuredClone(frame)); // bridge's lagging copy
+        const promptLines = logs.filter((l) => l.sessionId === "peer-1" && l.kind === "prompt");
+        expect(promptLines).toHaveLength(1);
+    });
+
+    it("the same text after the 5 s echo window is real news again", async () => {
+        let now = 1_000_000;
+        const { core, logs } = makeCore({ now: () => now });
+        await seedSession(core, "peer-1");
+        const frame = { type: "user_message", sessionId: "peer-1", text: "same text" } as RawOmpEvent;
+        await core.handleEvent(frame);
+        now += 5_001;
+        await core.handleEvent(structuredClone(frame));
+        const promptLines = logs.filter((l) => l.sessionId === "peer-1" && l.kind === "prompt");
+        expect(promptLines).toHaveLength(2);
+    });
+
+    it("session_start is never suppressed — attach upserts, dedup would close sessions", async () => {
+        const { core, statusFile } = makeCore();
+        await seedSession(core, "peer-1");
+        await core.handleEvent({ type: "session_start", sessionId: "peer-1", attached: true, cwd: "/w" } as RawOmpEvent);
+        expect(statusFile.sessions["peer-1"]?.status).toBe("open");
     });
 });
 

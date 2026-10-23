@@ -8,7 +8,7 @@ import type { SessionRecord } from "./session";
 
 /** Machine-local freshness window: a transcript untouched for this long is
  * exited (the hub believes only live sessions; finished sessions leave the
- * board). Matches cmd_tails's END_QUIET_MS (docs/03 §tails). */
+ * board). Matches the transcript bridge's END_QUIET_MS (docs/03 §tails). */
 export const OMP_SESSION_STALE_MS = 40_000;
 
 /** One machine-wide fact: a transcript-observed omp session. */
